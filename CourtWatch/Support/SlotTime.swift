@@ -12,7 +12,11 @@
 
 import Foundation
 
-struct SlotTime: Hashable, Sendable, Comparable {
+/// `nonisolated` for the same reason `CourtTime` is: availability decoding runs
+/// off the main actor, and under this module's default isolation an
+/// initializer that is implicitly main-actor-isolated cannot be called — or
+/// referenced — from there.
+nonisolated struct SlotTime: Hashable, Sendable, Comparable {
     let hour: Int
     let minute: Int
 
@@ -43,6 +47,20 @@ struct SlotTime: Hashable, Sendable, Comparable {
 
     var displayString: String {
         CourtTime.display.string(from: date(on: Date()))
+    }
+
+    /// The `"HH:mm:ss"` form the API expects when a request narrows the time
+    /// window.
+    ///
+    /// Built from the integer components with zero padding rather than through
+    /// a formatter. This is not date handling — there is no locale, calendar or
+    /// zone involved in printing two numbers — and routing it through a
+    /// formatter would add exactly the device-settings exposure that
+    /// `CourtTime` exists to prevent.
+    var apiString: String {
+        let paddedHour = hour < 10 ? "0\(hour)" : "\(hour)"
+        let paddedMinute = minute < 10 ? "0\(minute)" : "\(minute)"
+        return "\(paddedHour):\(paddedMinute):00"
     }
 
     /// A slot starting exactly now has not passed: a court free this minute is

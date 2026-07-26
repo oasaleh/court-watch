@@ -20,7 +20,19 @@
 
 import Foundation
 
-enum CourtTime {
+//  Isolation: this type is `nonisolated` so that decoding, which runs off the
+//  main actor, can parse slot times. The module builds with
+//  SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor, which would otherwise make every
+//  member here main-actor-isolated and unreachable from the API layer.
+//
+//  The three formatters are `nonisolated(unsafe)` rather than wrapped. They are
+//  configured once here and never mutated afterwards, and DateFormatter is
+//  documented as safe for concurrent use under exactly that condition. The
+//  annotation records an existing property of this code rather than granting a
+//  new permission: sharing one instance per pattern was already the design, and
+//  a mutation added later would be a bug with or without the annotation.
+
+nonisolated enum CourtTime {
 
     /// The Township is in US Central. Pinned explicitly so a travelling user
     /// still sees the times the courts actually operate on.
@@ -45,14 +57,14 @@ enum CourtTime {
     /// A bare time carries no day, so parsing yields an instant on a reference
     /// day rather than today. Anchor it with `SlotTime.date(on:)` before
     /// comparing it to anything.
-    static let slotParser = makeFormatter(pattern: "HH:mm:ss")
+    nonisolated(unsafe) static let slotParser = makeFormatter(pattern: "HH:mm:ss")
 
     /// Parses the `"yyyy-MM-dd"` dates the API returns.
-    static let dayParser = makeFormatter(pattern: "yyyy-MM-dd")
+    nonisolated(unsafe) static let dayParser = makeFormatter(pattern: "yyyy-MM-dd")
 
     /// Renders every time the user sees. 12-hour, uppercase meridiem, no
     /// leading zero on the hour.
-    static let display = makeFormatter(pattern: "h:mm a")
+    nonisolated(unsafe) static let display = makeFormatter(pattern: "h:mm a")
 
     static func string(from date: Date) -> String {
         display.string(from: date)
