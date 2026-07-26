@@ -4,35 +4,107 @@
 //
 //  Created by Omar Saleh on 7/26/26.
 //
+//  The root screen: fetch today's courts once, then hand the derived places to
+//  the rest of the interface.
+//
+//  This is the only view that talks to the network. Everything below it takes
+//  the data it needs as a parameter, which keeps those screens previewable and
+//  keeps a client out of the view layer, where it would otherwise be
+//  constructed afresh on every redraw.
+//
+//  Loading and failure are deliberately unfinished here. A spinner and one
+//  line of text are enough to see the real screens working; the state taxonomy
+//  belongs to a later phase, and anything invested in it now gets rewritten.
+//
 
 import SwiftUI
 
-/// The slot list the availability endpoint publishes for a tennis court.
-/// Stand-in data: the real list arrives with the API client. It is here so the
-/// time layer can be seen working on a device rather than only in tests.
-private let publishedSlots = [
-    "07:00:00", "08:00:00", "09:00:00", "10:00:00",
-    "11:00:00", "12:00:00", "13:00:00", "14:00:00",
-    "15:00:00", "16:00:00", "17:00:00", "18:00:00",
-    "19:00:00", "20:00:00", "21:00:00", "22:00:00",
-]
-
 struct ContentView: View {
-    // Spelled as a closure rather than a reference to the initializer: with
-    // main-actor isolation applied by default, passing the initializer
-    // directly drops that isolation and fails to compile.
-    private let slots = publishedSlots.compactMap { SlotTime(apiString: $0) }
+
+    let favorites: FavoritesStore
+
+    /// One value rather than three.
+    ///
+    /// `isLoading` beside an `error` beside a list permits combinations that
+    /// mean nothing — loading and failed at the same time, loaded with an
+    /// error still set. An enum makes those unrepresentable rather than merely
+    /// unlikely.
+    private enum LoadState {
+        case loading
+        case loaded([Facility])
+        case failed
+    }
+
+    @State private var state: LoadState = .loading
 
     var body: some View {
         NavigationStack {
-            List(slots, id: \.self) { slot in
-                Text(slot.displayString)
+            content
+                .navigationTitle("Courts")
+        }
+        // `.task` rather than `.onAppear`: it gives an async context and
+        // cancels itself when the view goes away. It runs once — nothing here
+        // polls, retries on a timer, or refreshes in the background.
+        .task { await load() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch state {
+        case .loading:
+            ProgressView()
+
+        case .failed:
+            Text("Couldn't load today's courts.")
+
+        case .loaded(let facilities):
+            List(facilities) { facility in
+                Button {
+                    favorites.toggle(facility.id)
+                } label: {
+                    row(for: facility)
+                }
+                .buttonStyle(.plain)
             }
-            .navigationTitle("Today")
+        }
+    }
+
+    private func row(for facility: Facility) -> some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(facility.name)
+
+                // Plain interpolation of the count. The generic `formatted`
+                // convenience matches the date-discipline guard's pattern and
+                // fails the build — integer formatting is not date handling,
+                // but the guard cannot tell the two apart and is right not to
+                // try.
+                Text(facility.courts.count == 1 ? "1 court" : "\(facility.courts.count) courts")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if favorites.contains(facility.id) {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.tint)
+            }
+        }
+        .contentShape(.rect)
+    }
+
+    private func load() async {
+        do {
+            let client = AvailabilityClient(session: CourtSession())
+            let availability = try await client.fetch(on: SystemClock().today)
+            state = .loaded(availability.facilities)
+        } catch {
+            state = .failed
         }
     }
 }
 
 #Preview {
-    ContentView()
+    ContentView(favorites: FavoritesStore())
 }
