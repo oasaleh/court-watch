@@ -58,40 +58,8 @@ struct ContentView: View {
             Text("Couldn't load today's courts.")
 
         case .loaded(let facilities):
-            List(facilities) { facility in
-                Button {
-                    favorites.toggle(facility.id)
-                } label: {
-                    row(for: facility)
-                }
-                .buttonStyle(.plain)
-            }
+            FacilityPickerScreen(facilities: facilities, favorites: favorites)
         }
-    }
-
-    private func row(for facility: Facility) -> some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text(facility.name)
-
-                // Plain interpolation of the count. The generic `formatted`
-                // convenience matches the date-discipline guard's pattern and
-                // fails the build — integer formatting is not date handling,
-                // but the guard cannot tell the two apart and is right not to
-                // try.
-                Text(facility.courts.count == 1 ? "1 court" : "\(facility.courts.count) courts")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            if favorites.contains(facility.id) {
-                Image(systemName: "checkmark")
-                    .foregroundStyle(.tint)
-            }
-        }
-        .contentShape(.rect)
     }
 
     private func load() async {
