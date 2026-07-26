@@ -1,0 +1,30 @@
+# GSD planning docs — local only
+.planning/
+
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods / Carthage
+Pods/
+Carthage/Build/
+
+# Secrets — never commit credentials for the ActiveCommunities account
+Secrets.plist
+*.xcconfig.local
+.env
