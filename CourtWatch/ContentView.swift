@@ -36,6 +36,7 @@ struct ContentView: View {
     }
 
     @State private var state: LoadState = .loading
+    @State private var isChoosingFacilities = false
 
     var body: some View {
         NavigationStack {
@@ -58,7 +59,34 @@ struct ContentView: View {
             Text("Couldn't load today's courts.")
 
         case .loaded(let facilities):
-            FacilityPickerScreen(facilities: facilities, favorites: favorites)
+            FavoritesScreen(
+                facilities: facilities,
+                favorites: favorites,
+                onChooseFacilities: { isChoosingFacilities = true }
+            )
+            .toolbar {
+                // The second route into the picker: the invitation is for
+                // someone who has chosen nothing, this is for someone who has
+                // and wants to change it. A semantic placement rather than a
+                // navigation-bar one, so it stays correct on iPad.
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Facilities", systemImage: "slider.horizontal.3") {
+                        isChoosingFacilities = true
+                    }
+                }
+            }
+            .sheet(isPresented: $isChoosingFacilities) {
+                // Its own stack, so the picker gets a title bar and a search
+                // field of its own rather than borrowing the one behind it.
+                NavigationStack {
+                    FacilityPickerScreen(facilities: facilities, favorites: favorites)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { isChoosingFacilities = false }
+                            }
+                        }
+                }
+            }
         }
     }
 
