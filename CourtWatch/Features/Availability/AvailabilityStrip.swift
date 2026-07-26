@@ -1,0 +1,275 @@
+//
+//  AvailabilityStrip.swift
+//  CourtWatch
+//
+//  One court, its whole remaining day, in a row that always fits the screen.
+//
+//  Sixteen segments across roughly 275 points of an iPhone is about 17 points
+//  each. That is an illegible button and an ordinary chart bar, and the
+//  difference is the whole design: nothing in this grid is tappable, so Apple's
+//  44-point minimum — a *hit target* rule — does not bind here. The governing
+//  constraint is legibility, and a 17-point bar is legible when what it encodes
+//  is how much ink it has rather than what is written inside it.
+//
+//  This file holds no opinion about what a status means. It asks
+//  `SlotAppearance` and draws the answer. A status check here would be a second
+//  opinion that could disagree with the spoken label, which is exactly the
+//  failure a single mapping exists to prevent — so the appearance, and only the
+//  appearance, decides.
+//
+
+import SwiftUI
+
+struct AvailabilityStrip: View {
+
+    let court: Court
+    let slots: [SlotTime]
+    let statuses: [SlotStatus]
+    let layout: StripLayout
+
+    /// Grows with the user's text size rather than staying pinned, so the strip
+    /// gets taller before it is abandoned altogether at accessibility sizes.
+    @ScaledMetric(relativeTo: .caption) private var cellHeight: CGFloat = 22
+
+    var body: some View {
+        switch layout {
+        case .list:
+            openHoursList
+        case .dense, .glyph, .labeled:
+            strip
+        }
+    }
+
+    // MARK: - The strip
+
+    private var strip: some View {
+        HStack(spacing: StripLayout.defaultSpacing) {
+            Text(courtLabel)
+                .font(.caption)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(width: StripLayout.defaultLabelWidth, alignment: .leading)
+                .accessibilityLabel(court.name)
+
+            // Each cell takes an equal share of whatever width is actually
+            // there, so rounding cannot accumulate across sixteen of them and
+            // the row can never come out wider than its container. The tier
+            // decides only what a cell *draws* — never what frame it gets.
+            // Conflating those two jobs is how a strip ends up one pixel wide
+            // of the screen it is supposed to fit.
+            ForEach(slots.indices, id: \.self) { index in
+                cell(at: index)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: cellHeight)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cell(at index: Int) -> some View {
+        if index < statuses.count {
+            SlotCell(
+                appearance: SlotAppearance.of(statuses[index]),
+                layout: layout,
+                slot: slots[index],
+                label: SlotAppearance.label(court: court.name, slot: slots[index])
+            )
+        } else {
+            // A court that published fewer statuses than there are slots. Phase
+            // 2 recorded that these exist and carries them deliberately. An
+            // empty cell keeps the column grid intact — dropping it would shift
+            // every later cell in this row out of alignment with the rest of
+            // the screen — and it is hidden from VoiceOver because "nothing is
+            // known about this hour" is Phase 5's error taxonomy to word, not
+            // something to invent here.
+            Color.clear
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Just the number, not the whole name.
+    ///
+    /// The facility name is the section header directly above, so repeating it
+    /// in all eleven rows would spend exactly the width that makes the strip fit
+    /// at all — this column is what buys the cells their 17 points. A court with
+    /// no trailing number keeps its full name, because those exist and a blank
+    /// label would be worse than a wide one.
+    private var courtLabel: String {
+        CourtNumber.parse(from: court.name).map { "\($0)" } ?? court.name
+    }
+
+    // MARK: - The accessibility-size list
+
+    /// At the largest text sizes the strip is abandoned rather than shrunk.
+    ///
+    /// Booked hours are omitted here on purpose. There is room for one answer at
+    /// this size, and the question this app exists to answer is what is *open* —
+    /// listing the closed hours as well would push the open ones off the screen
+    /// to say something the user did not ask.
+    private var openHoursList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(court.name)
+                .font(.headline)
+
+            Text(openCountLine)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if openSlots.isEmpty == false {
+                Text(openSlots.map(\.displayString).joined(separator: ", "))
+                    .font(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Plain interpolation, never the numeric convenience call: that call is
+    /// matched by the date-handling guard and fails the build.
+    private var openCountLine: String {
+        openSlots.isEmpty
+            ? "Nothing free"
+            : "\(openSlots.count) of \(slots.count) free"
+    }
+
+    /// The hours this court is free.
+    ///
+    /// Derived by asking the single status-to-appearance mapping whether a cell
+    /// looks like an available one, rather than by re-deciding here what
+    /// "available" means. That keeps this list, the drawn cells and the spoken
+    /// labels all downstream of one answer — and it stays correct if the domain
+    /// ever grows a fourth state, which would map to its own appearance rather
+    /// than quietly matching this comparison.
+    private var openSlots: [SlotTime] {
+        let free = SlotAppearance.of(.available)
+
+        return zip(slots, statuses)
+            .filter { SlotAppearance.of($0.1) == free }
+            .map(\.0)
+    }
+}
+
+// MARK: - One cell
+
+private struct SlotCell: View {
+
+    let appearance: SlotAppearance
+    let layout: StripLayout
+    let slot: SlotTime
+    let label: String
+
+    /// The user has asked not to be made to rely on colour. Borders thicken so
+    /// the outline treatment reads as an outline rather than as a pale block.
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    var body: some View {
+        ZStack {
+            shape
+            mark
+        }
+        // One element per cell, or VoiceOver reads a grid as a flood of
+        // context-free state words. The label restores the row and column a
+        // sighted user reads off the axes; the state goes in the value slot so
+        // the announcement comes out as label-then-value naturally.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(appearance.spokenState)
+    }
+
+    @ViewBuilder
+    private var shape: some View {
+        let rectangle = RoundedRectangle(cornerRadius: 2, style: .continuous)
+
+        switch appearance.fill {
+        case .filled:
+            rectangle.fill(tint)
+
+        case .outline:
+            rectangle
+                .strokeBorder(tint, lineWidth: differentiateWithoutColor ? 2 : 1)
+
+        case .hatched:
+            rectangle
+                .fill(tint.opacity(0.12))
+                .overlay {
+                    DiagonalHatch()
+                        .stroke(tint, lineWidth: differentiateWithoutColor ? 1.5 : 1)
+                        .clipShape(rectangle)
+                }
+                .overlay {
+                    rectangle.strokeBorder(tint, lineWidth: differentiateWithoutColor ? 2 : 1)
+                }
+        }
+    }
+
+    /// The symbol appears only once a cell is wide enough to carry one, and the
+    /// hour only once it is wide enough to carry that. In the dense tier a cell
+    /// is a block and nothing else — which is D2 working, not a gap.
+    @ViewBuilder
+    private var mark: some View {
+        switch layout {
+        case .dense, .list:
+            EmptyView()
+
+        case .glyph:
+            Image(systemName: appearance.symbolName)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(markTint)
+
+        case .labeled:
+            VStack(spacing: 0) {
+                Image(systemName: appearance.symbolName)
+                    .font(.caption2.bold())
+                Text(slot.displayString)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .foregroundStyle(markTint)
+            .padding(.horizontal, 2)
+        }
+    }
+
+    /// Colour is a redundant channel layered on top of the ink, never the
+    /// carrier of meaning. Remove it entirely — greyscale, or any form of colour
+    /// blindness — and solid, empty and hatched still say three different
+    /// things.
+    private var tint: Color {
+        switch appearance.fill {
+        case .filled: .green
+        case .outline: .secondary
+        case .hatched: .orange
+        }
+    }
+
+    /// Drawn on top of a solid block, so it has to be the contrasting colour
+    /// rather than the same one.
+    private var markTint: Color {
+        appearance.fill == .filled ? .white : tint
+    }
+}
+
+/// Diagonal stripes, so the unrecognised state has a *texture* rather than
+/// merely another shade. A shade is a third point on the same scale and can be
+/// mistaken for either neighbour at a glance; a texture cannot.
+private struct DiagonalHatch: Shape {
+
+    var spacing: CGFloat = 3
+
+    /// Explicitly `nonisolated`: this module defaults to main-actor isolation
+    /// and the protocol requirement is not.
+    nonisolated func path(in rect: CGRect) -> Path {
+        var path = Path()
+        var x = rect.minX - rect.height
+
+        while x < rect.maxX {
+            path.move(to: CGPoint(x: x, y: rect.maxY))
+            path.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
+            x += spacing
+        }
+
+        return path
+    }
+}

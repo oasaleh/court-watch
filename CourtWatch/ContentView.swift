@@ -29,14 +29,26 @@ struct ContentView: View {
     /// mean nothing — loading and failed at the same time, loaded with an
     /// error still set. An enum makes those unrepresentable rather than merely
     /// unlikely.
+    ///
+    /// The loaded case carries the whole `Availability` rather than just the
+    /// grouped facilities, because what is left of today is derived from the
+    /// slot list and the published slot length as well as the courts. Keeping
+    /// the fetched value whole means that derivation has one input and cannot
+    /// be assembled from pieces that came from different responses.
     private enum LoadState {
         case loading
-        case loaded([Facility])
+        case loaded(Availability)
         case failed
     }
 
     @State private var state: LoadState = .loading
     @State private var isChoosingFacilities = false
+
+    /// The single owner of "now" for the whole screen.
+    ///
+    /// Injectable so that what counts as elapsed can be pinned. Every view below
+    /// takes the resolved day rather than reading a clock of its own.
+    var clock: CourtClock = SystemClock()
 
     var body: some View {
         NavigationStack {
@@ -58,10 +70,14 @@ struct ContentView: View {
         case .failed:
             Text("Couldn't load today's courts.")
 
-        case .loaded(let facilities):
+        case .loaded(let availability):
+            let facilities = availability.facilities
+
             FavoritesScreen(
                 facilities: facilities,
                 favorites: favorites,
+                day: VisibleDay.resolve(
+                    availability: availability, now: clock.now, startingAt: nil),
                 onChooseFacilities: { isChoosingFacilities = true }
             )
             .toolbar {
@@ -93,8 +109,8 @@ struct ContentView: View {
     private func load() async {
         do {
             let client = AvailabilityClient(session: CourtSession())
-            let availability = try await client.fetch(on: SystemClock().today)
-            state = .loaded(availability.facilities)
+            let availability = try await client.fetch(on: clock.today)
+            state = .loaded(availability)
         } catch {
             state = .failed
         }

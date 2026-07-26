@@ -54,6 +54,13 @@ nonisolated struct VisibleDay: Sendable, Equatable {
     /// walking a facility's courts cannot pair a row with the wrong court.
     private let statusesByCourt: [Int: [SlotStatus]]
 
+    /// A day with nothing in it and nothing to say about why.
+    ///
+    /// For the moment before any data has arrived, and for previews. Not
+    /// finished — "nothing loaded yet" and "today is over" are different
+    /// answers, and this value must not make a loading screen claim the second.
+    static let empty = VisibleDay(slots: [], isFinished: false, statusesByCourt: [:])
+
     /// Resolves the day.
     ///
     /// `startingAt` has no default. Omitting a filter and forgetting one look
