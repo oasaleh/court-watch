@@ -290,10 +290,12 @@ struct FavoritesStoreTests {
 
     /// Constructing a store is a read, and a read must not write.
     ///
-    /// This is not tidiness. Under `@Observable` a stored property becomes a
-    /// computed one, so an observer on the selection fires while `init` is
-    /// assigning the loaded value — turning every launch into a write. The
-    /// test below shows what that would cost.
+    /// This is not tidiness. `didSet` stays quiet while a property is being
+    /// initialized, but fires on assignment to one that already holds a value —
+    /// so giving the selection a default (`= []`) turns the `init` line that
+    /// loads it into an assignment, and every launch into a write. The test
+    /// below shows what that would cost. Plain Swift semantics, not something
+    /// `@Observable` introduces.
     @Test("Constructing a store writes nothing")
     func loadingDoesNotWrite() throws {
         let suite = try IsolatedDefaults()

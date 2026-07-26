@@ -30,14 +30,20 @@
 //      silently: favorites persist correctly and the interface simply never
 //      refreshes until the next launch.
 //    * The write is spelled out in `toggle` rather than driven by a `didSet`
-//      observer on the selection. Measured: @Observable rewrites a stored
-//      property into a computed one, so the assignment that loads the saved
-//      value in `init` runs the setter — and a `didSet` there fires during
-//      initialization, writing straight back what was just read. On a value
-//      this version could not decode that write replaces it with an empty
-//      array, destroying data a later version or a rollback might still have
-//      read. Loading must stay a read. A test asserts that constructing a
-//      store writes nothing at all.
+//      observer on the selection. `didSet` does not fire while a property is
+//      being *initialized*, but it does fire on any *assignment* to a property
+//      that already holds a value. Give this property a default (`= []`) and
+//      the `init` line that loads the saved selection becomes an assignment —
+//      so the observer runs during launch and writes straight back what was
+//      just read. Measured: that shape writes 2 bytes (`[]`) on construction.
+//      On a value this version could not decode, that write replaces it with
+//      an empty array, destroying data a later version or a rollback might
+//      still have read. Loading must stay a read.
+//
+//      This is ordinary Swift initialization-versus-assignment; it is not
+//      caused by `@Observable`, and removing the macro would not make an
+//      observer here safe. Two tests pin the behavior: constructing a store
+//      writes nothing, and an undecodable stored value survives a failed read.
 //
 
 import Foundation
