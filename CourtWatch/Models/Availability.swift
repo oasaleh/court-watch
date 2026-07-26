@@ -91,11 +91,7 @@ nonisolated struct Availability: Sendable {
                 Court(
                     id: resource.resourceID,
                     name: resource.resourceName,
-                    // Wired to the facility-name derivation in the next commit.
-                    // Until then a court is its own facility, which is wrong but
-                    // honest — it does not invent a grouping that has not been
-                    // written yet.
-                    facilityName: resource.resourceName,
+                    facilityName: FacilityName.derive(from: resource.resourceName),
                     slots: slots,
                     warnings: resource.warningMessages
                 )
@@ -105,5 +101,11 @@ nonisolated struct Availability: Sendable {
         self.slotTimes = times
         self.courts = courts
         self.degradedCourts = degraded
+    }
+
+    /// The courts regrouped as the user thinks of them. Derived rather than
+    /// stored so there is one source of truth for what a facility contains.
+    var facilities: [Facility] {
+        Facility.group(courts)
     }
 }
