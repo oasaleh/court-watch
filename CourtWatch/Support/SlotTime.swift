@@ -63,10 +63,28 @@ nonisolated struct SlotTime: Hashable, Sendable, Comparable {
         return "\(paddedHour):\(paddedMinute):00"
     }
 
-    /// A slot starting exactly now has not passed: a court free this minute is
-    /// still worth showing.
-    func isPast(now: Date) -> Bool {
-        date(on: now) < now
+    /// Whether this slot's hour is over.
+    ///
+    /// A slot survives until it **ends**, not until it starts. At 2:15 PM a
+    /// court free until 3:00 PM is still worth walking to, so the 2:00 PM slot
+    /// is still shown; at exactly 3:00 PM it is not. The boundary is inclusive
+    /// at the end and exclusive at the start.
+    ///
+    /// `slotMinutes` is required and deliberately has no default. A default
+    /// would quietly hand 60 to every call site that forgot to pass one, which
+    /// is a hardcoded constant with extra steps and the same failure mode: if
+    /// the API moved to 30-minute slots, the app would go on showing a slot for
+    /// half an hour after it ended — a court advertised as free that is not.
+    /// Requiring the parameter means every caller has to say where the number
+    /// came from, and `Availability.slotMinutes` is where it comes from.
+    ///
+    /// Seconds are added rather than calendar minutes, which is safe for the
+    /// same reason the note on `date(on:)` gives: slots run 07:00 to 22:00 and
+    /// the daylight-saving gap falls at 02:00, so no slot can span it. Plain
+    /// arithmetic also keeps this total, with no optional to unwrap and no
+    /// second code path to get wrong.
+    func isElapsed(now: Date, slotMinutes: Int) -> Bool {
+        date(on: now).addingTimeInterval(TimeInterval(slotMinutes) * 60) <= now
     }
 
     static func < (lhs: Self, rhs: Self) -> Bool {

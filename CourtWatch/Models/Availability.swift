@@ -56,6 +56,27 @@ nonisolated struct Availability: Sendable {
     let slotTimes: [SlotTime]
     let courts: [Court]
 
+    /// How long a slot lasts, in minutes, as published by the API.
+    ///
+    /// Carried rather than assumed. Whether a slot is over is decided by its
+    /// start plus this number, so a wrong value here is the one class of wrong
+    /// answer this app must never give: were the Township to move to 30-minute
+    /// slots and the app to assume 60, then at 2:45 PM it would still be
+    /// showing the 2:30 PM slot as live, fifteen minutes after it ended — a
+    /// court advertised as free that is not.
+    let slotMinutes: Int
+
+    /// The slot length used when the API does not publish a usable one.
+    ///
+    /// 60 is the measured value: all three committed fixtures, the inline stub
+    /// in the client suite, and both live captures publish `time_increment: 60`.
+    ///
+    /// Falling back to zero would be "safer" in the narrow sense of never
+    /// showing a slot that is over, but it would mark every slot elapsed the
+    /// instant it began and tell a user at noon that the day was finished — a
+    /// broken app in exchange for a theoretical guarantee.
+    static let fallbackSlotMinutes = 60
+
     /// Courts whose slot array did not match the published slot list.
     ///
     /// These are still present in `courts`, with the slots that could be
@@ -101,6 +122,18 @@ nonisolated struct Availability: Sendable {
         self.slotTimes = times
         self.courts = courts
         self.degradedCourts = degraded
+
+        // Guarded rather than trusted. The field is optional on the wire and
+        // this is an undocumented third-party endpoint, so a missing or
+        // nonsensical increment must degrade to the measured value instead of
+        // to a broken screen — a zero or negative length would mark every slot
+        // elapsed the moment it began. DATA-09's posture, applied to a field
+        // that had not needed it before.
+        if let published = wire.timeIncrement, published > 0 {
+            self.slotMinutes = published
+        } else {
+            self.slotMinutes = Self.fallbackSlotMinutes
+        }
     }
 
     /// The courts regrouped as the user thinks of them. Derived rather than

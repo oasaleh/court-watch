@@ -24,6 +24,57 @@ private func central(
     )
 }
 
+/// Argument lists for parameterized tests live on a `nonisolated` type: the
+/// `arguments:` collection is evaluated outside the enclosing actor.
+nonisolated enum SlotLengthCases {
+
+    /// What the API published against the length the app should use.
+    static let all: [(Int?, Int)] = [
+        // The field is optional on the wire and can simply be absent.
+        (nil, 60),
+
+        // Nonsense. Either would mark every slot elapsed the instant it began
+        // and tell a user at noon that the day was over.
+        (0, 60),
+        (-30, 60),
+
+        // Honoured as published. 30 is the case that matters: it is the change
+        // the Township could plausibly make, and the one a hardcoded hour would
+        // get wrong for half an hour at a time.
+        (30, 30),
+        (60, 60),
+        (90, 90),
+    ]
+}
+
+/// An availability built from a hand-made payload.
+///
+/// All three committed fixtures publish `time_increment: 60`, so the absent,
+/// zero and negative cases cannot be reached from captured data at all. Going
+/// through the real decoder rather than constructing the domain type directly
+/// keeps the wire hop — which is where the value could be lost — inside what is
+/// being tested.
+private func availability(timeIncrement: Int?) throws -> Availability {
+    let increment = timeIncrement.map { ", \"time_increment\": \($0)" } ?? ""
+
+    let json = """
+        {
+          "headers": { "response_code": "0000" },
+          "body": {
+            "availability": {
+              "time_slots": ["07:00:00", "08:00:00"],
+              "resources": []\(increment)
+            }
+          }
+        }
+        """
+
+    let envelope = try JSONDecoder().decode(
+        AvailabilityEnvelope.self, from: Data(json.utf8))
+
+    return Availability(envelope: envelope)
+}
+
 struct SlotTimeTests {
 
     @Test("An afternoon slot parses to its wall-clock hour and minute")
@@ -86,27 +137,90 @@ struct SlotTimeTests {
         #expect(CourtTime.display.string(from: anchored) == "2:00 PM")
     }
 
-    @Test("Only the slots still to come count as upcoming")
-    func filtersSlotsAlreadyPast() throws {
+    /// The 13:20 case, recomputed under the ruled semantics.
+    ///
+    /// This assertion moved. It used to expect 9 slots beginning at 2:00 PM,
+    /// because the 1 PM slot had started and was therefore "past". Under the
+    /// rule a slot lives until its hour ends, so the 1 PM hour is still in
+    /// progress at 1:20 and the answer is 10 slots beginning at 1:00 PM.
+    ///
+    /// Research §5 records the old figure of 9 as verified. It describes the
+    /// superseded rule and is not a source of expected values here.
+    @Test("Only the slots that have not yet ended count as upcoming")
+    func filtersSlotsAlreadyElapsed() throws {
         let clock = FixedClock(now: try central(hour: 13, minute: 20))
         let slots = try publishedSlots.map { try #require(SlotTime(apiString: $0)) }
 
-        let upcoming = slots.filter { $0.isPast(now: clock.now) == false }
+        let upcoming = slots.filter {
+            $0.isElapsed(now: clock.now, slotMinutes: 60) == false
+        }
 
         #expect(clock.today == clock.now)
-        #expect(upcoming.count == 9)
-        #expect(upcoming.first?.displayString == "2:00 PM")
+        #expect(upcoming.count == 10)
+        #expect(upcoming.first?.displayString == "1:00 PM")
         #expect(upcoming.last?.displayString == "10:00 PM")
     }
 
-    /// A court free right now is still worth showing, so the boundary includes
-    /// the current moment rather than excluding it.
-    @Test("A slot happening exactly now has not passed")
-    func treatsBoundaryAsUpcoming() throws {
+    /// The ruling itself, at the boundary it turns on.
+    ///
+    /// The middle assertion inverts what Phase 1 pinned. A slot one minute into
+    /// its hour used to count as past; it now counts as live, because a court
+    /// free until 3:00 PM is still usable at 2:01. The old doc comment — "a
+    /// slot happening exactly now has not passed" — described the start
+    /// boundary, which is no longer the boundary that decides anything.
+    @Test("A slot in progress has not elapsed, and ends exactly on the hour")
+    func treatsInProgressSlotAsLive() throws {
         let slot = try #require(SlotTime(apiString: "14:00:00"))
 
-        #expect(slot.isPast(now: try central(hour: 14)) == false)
-        #expect(slot.isPast(now: try central(hour: 14, minute: 1)))
-        #expect(slot.isPast(now: try central(hour: 13, minute: 59)) == false)
+        // Before it starts.
+        #expect(slot.isElapsed(now: try central(hour: 13, minute: 59), slotMinutes: 60) == false)
+
+        // Exactly as it starts.
+        #expect(slot.isElapsed(now: try central(hour: 14), slotMinutes: 60) == false)
+
+        // One minute in — this is the assertion that inverted.
+        #expect(slot.isElapsed(now: try central(hour: 14, minute: 1), slotMinutes: 60) == false)
+
+        // One minute before it ends.
+        #expect(slot.isElapsed(now: try central(hour: 14, minute: 59), slotMinutes: 60) == false)
+
+        // Exactly as it ends.
+        #expect(slot.isElapsed(now: try central(hour: 15), slotMinutes: 60))
+
+        // Well after.
+        #expect(slot.isElapsed(now: try central(hour: 16), slotMinutes: 60))
+    }
+
+    /// The length is honoured, not assumed.
+    ///
+    /// Every fixture publishes 60, so a hardcoded hour would pass every other
+    /// test in this file. This is the case that would fail if someone quietly
+    /// reintroduced one.
+    @Test("A thirty-minute slot ends at the half hour")
+    func honoursNonDefaultSlotLength() throws {
+        let slot = try #require(SlotTime(apiString: "14:00:00"))
+
+        #expect(slot.isElapsed(now: try central(hour: 14, minute: 29), slotMinutes: 30) == false)
+        #expect(slot.isElapsed(now: try central(hour: 14, minute: 30), slotMinutes: 30))
+
+        // The same instant under a 60-minute length is still live, which is
+        // what proves the parameter is doing the work rather than the clock.
+        #expect(slot.isElapsed(now: try central(hour: 14, minute: 30), slotMinutes: 60) == false)
+    }
+
+    @Test("The published slot length reaches the domain type")
+    func readsSlotLengthFromTheCapture() throws {
+        let envelope = try JSONDecoder().decode(
+            AvailabilityEnvelope.self, from: try Fixture.data(Fixture.anonymous))
+
+        #expect(Availability(envelope: envelope).slotMinutes == 60)
+    }
+
+    /// Absent, zero and negative all degrade to the measured 60. No fixture can
+    /// produce any of them — all three publish 60 — so these envelopes are
+    /// built by hand.
+    @Test("A missing or nonsensical increment falls back to sixty", arguments: SlotLengthCases.all)
+    func guardsSlotLength(published: Int?, expected: Int) throws {
+        #expect(try availability(timeIncrement: published).slotMinutes == expected)
     }
 }
