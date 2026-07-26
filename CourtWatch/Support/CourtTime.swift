@@ -70,6 +70,17 @@ nonisolated enum CourtTime {
         display.string(from: date)
     }
 
+    /// Renders a day as `yyyy-MM-dd` in Central, the form the availability
+    /// request's `reserve_date` takes.
+    ///
+    /// Here rather than at the call site because this is genuine date
+    /// handling: the day depends on the time zone, and a request built from
+    /// the device's zone would ask for tomorrow's courts late at night in
+    /// Europe.
+    static func dayString(from date: Date) -> String {
+        dayParser.string(from: date)
+    }
+
     /// Locale, zone and calendar are assigned before the pattern: setting the
     /// pattern first and the locale second can re-derive the pattern.
     ///
