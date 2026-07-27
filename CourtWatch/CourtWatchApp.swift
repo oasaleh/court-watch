@@ -32,11 +32,31 @@ struct CourtWatchApp: App {
     /// **One session for one process, not a session kept on disk.** Persisting
     /// it across launches is out of scope by requirement rather than by
     /// oversight: this dies with the process and a relaunch re-handshakes.
-    @State private var session = CourtWatchApp.makeSession()
+    @State private var session: CourtSession
+
+    /// The account state, built on the **same** session.
+    ///
+    /// Constructed in `init` rather than as a default value because it has to
+    /// be handed the very session above — the jar that signs in must be the jar
+    /// that fetches, and two properties initialised independently could not
+    /// share one.
+    @State private var account: AccountStore
+
+    init() {
+        let session = CourtWatchApp.makeSession()
+
+        _session = State(initialValue: session)
+        _account = State(
+            initialValue: AccountStore(
+                session: session,
+                credentialStore: CredentialStore(),
+                client: SignInClient(session: session),
+                probe: SessionProbe(session: session)))
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(session: session, favorites: favorites)
+            ContentView(session: session, account: account, favorites: favorites)
         }
     }
 

@@ -79,6 +79,10 @@ struct ContentView: View {
     /// carrying a real customer id was measured to be refused outright.
     let session: CourtSession
 
+    /// The account state. Read for exactly two things: which identity the fetch
+    /// carries, and what the toolbar control says.
+    let account: AccountStore
+
     let favorites: FavoritesStore
 
     /// One value rather than three.
@@ -134,6 +138,9 @@ struct ContentView: View {
     @State private var state: LoadState = .loading
     @State private var isChoosingFacilities = false
 
+    /// Whether the account sheet is up.
+    @State private var isShowingAccount = false
+
     /// Whether a fetch is in flight.
     ///
     /// Exists to stop retries piling up. Five impatient taps used to start five
@@ -178,11 +185,57 @@ struct ContentView: View {
         NavigationStack {
             content
                 .navigationTitle("Courts")
+                // The account control, in the one toolbar slot that was empty.
+                // The two existing trailing actions were placed deliberately
+                // in Phase 4 and are untouched: a third there would crowd them
+                // and would rank the least-used control in the app alongside
+                // the two most used.
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            account.refreshStoredCredentialAvailability()
+                            isShowingAccount = true
+                        } label: {
+                            Image(
+                                systemName: account.identity.isSignedIn
+                                    ? "person.crop.circle.fill" : "person.crop.circle")
+                        }
+                        // Names the **state**, not just the control. "Account"
+                        // tells a VoiceOver user nothing about whether they are
+                        // signed in, and that is the one thing this control
+                        // exists to expose. The symbol is a supplement to this,
+                        // never the only statement of state.
+                        .accessibilityLabel(
+                            account.identity.isSignedIn
+                                ? "Account, signed in" : "Account, not signed in")
+                    }
+                }
+                .sheet(isPresented: $isShowingAccount) {
+                    // Its own stack, so it gets a title bar of its own rather
+                    // than borrowing the one behind it.
+                    NavigationStack {
+                        Group {
+                            if account.identity.isSignedIn {
+                                AccountSummary(account: account)
+                            } else {
+                                SignInScreen(account: account)
+                            }
+                        }
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { isShowingAccount = false }
+                            }
+                        }
+                    }
+                }
         }
         // `.task` rather than `.onAppear`: it gives an async context and
-        // cancels itself when the view goes away. It runs once — nothing here
-        // polls, retries on a timer, or refreshes in the background.
-        .task { await load() }
+        // cancels itself when the view goes away. Keyed on the identity so
+        // signing in or out takes effect without the user having to think about
+        // it — one extra fetch, caused by one deliberate action, through the
+        // same load path and the same in-flight guard. Nothing here polls,
+        // retries on a timer, or refreshes in the background.
+        .task(id: account.identity) { await load() }
     }
 
     @ViewBuilder
@@ -446,14 +499,22 @@ struct ContentView: View {
                 AvailabilityClient.SlotWindow(start: wanted.start, end: wanted.end)
             }
 
-            let availability = try await client.fetch(on: clock.today, window: clientWindow)
+            let availability = try await client.fetch(
+                on: clock.today, window: clientWindow, as: account.identity)
+
+            // A signed-in request the server refused was served anonymously
+            // instead, so the account surface must stop saying otherwise.
+            if availability.downgradedToAnonymous {
+                account.reportAnonymousFallback()
+            }
 
             // Data, the moment it arrived, and the window it came from are
             // stored in one transition, so they cannot drift apart. The moment
             // comes from the injected clock rather than a fresh system read, so
             // a test can pin it. A success clears any failure being reported.
             state = .loaded(
-                availability, fetchedAt: clock.now, window: window, lastFailure: nil)
+                availability.availability, fetchedAt: clock.now, window: window,
+                lastFailure: nil)
         } catch {
             // Anything that is not one of the client's own failures is treated
             // as the far end not answering: true of every case that can reach
@@ -493,5 +554,14 @@ struct ContentView: View {
 #Preview {
     // The same session the app builds, so the preview is not a second
     // arrangement that could drift. Nothing fetches until `.task` runs.
-    ContentView(session: CourtWatchApp.makeSession(), favorites: FavoritesStore())
+    let session = CourtWatchApp.makeSession()
+
+    ContentView(
+        session: session,
+        account: AccountStore(
+            session: session,
+            credentialStore: CredentialStore(),
+            client: SignInClient(session: session),
+            probe: SessionProbe(session: session)),
+        favorites: FavoritesStore())
 }
