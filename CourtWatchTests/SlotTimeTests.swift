@@ -89,14 +89,14 @@ struct SlotTimeTests {
     func displaysMorningSlot() throws {
         let slot = try #require(SlotTime(apiString: "07:00:00"))
 
-        #expect(slot.displayString == "7:00 AM")
+        #expect(slot.displayString == "7 AM")
     }
 
     @Test("A late slot displays as an evening 12-hour time")
     func displaysLateSlot() throws {
         let slot = try #require(SlotTime(apiString: "22:00:00"))
 
-        #expect(slot.displayString == "10:00 PM")
+        #expect(slot.displayString == "10 PM")
     }
 
     /// The endpoint is undocumented and unversioned, so a slot it stops
@@ -139,10 +139,10 @@ struct SlotTimeTests {
 
     /// The 13:20 case, recomputed under the ruled semantics.
     ///
-    /// This assertion moved. It used to expect 9 slots beginning at 2:00 PM,
+    /// This assertion moved. It used to expect 9 slots beginning at 2 PM,
     /// because the 1 PM slot had started and was therefore "past". Under the
     /// rule a slot lives until its hour ends, so the 1 PM hour is still in
-    /// progress at 1:20 and the answer is 10 slots beginning at 1:00 PM.
+    /// progress at 1:20 and the answer is 10 slots beginning at 1 PM.
     ///
     /// Research §5 records the old figure of 9 as verified. It describes the
     /// superseded rule and is not a source of expected values here.
@@ -157,15 +157,15 @@ struct SlotTimeTests {
 
         #expect(clock.today == clock.now)
         #expect(upcoming.count == 10)
-        #expect(upcoming.first?.displayString == "1:00 PM")
-        #expect(upcoming.last?.displayString == "10:00 PM")
+        #expect(upcoming.first?.displayString == "1 PM")
+        #expect(upcoming.last?.displayString == "10 PM")
     }
 
     /// The ruling itself, at the boundary it turns on.
     ///
     /// The middle assertion inverts what Phase 1 pinned. A slot one minute into
     /// its hour used to count as past; it now counts as live, because a court
-    /// free until 3:00 PM is still usable at 2:01. The old doc comment — "a
+    /// free until 3 PM is still usable at 2:01. The old doc comment — "a
     /// slot happening exactly now has not passed" — described the start
     /// boundary, which is no longer the boundary that decides anything.
     @Test("A slot in progress has not elapsed, and ends exactly on the hour")

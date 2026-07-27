@@ -142,17 +142,17 @@ struct SlotAppearanceTests {
         let label = SlotAppearance.fullLabel(
             court: "Bear Branch Tennis 3", slot: try slot("18:00:00"), status: .available)
 
-        #expect(label == "Bear Branch Tennis 3, 6:00 PM, Available")
+        #expect(label == "Bear Branch Tennis 3, 6 PM, Available")
     }
 
     @Test("The label carries the court's own name and a twelve-hour time")
     func buildsLabelFromCourtAndTime() throws {
         #expect(
             SlotAppearance.label(court: "Timarron Tennis Court #1", slot: try slot("14:00:00"))
-                == "Timarron Tennis Court #1, 2:00 PM")
+                == "Timarron Tennis Court #1, 2 PM")
         #expect(
             SlotAppearance.label(court: "Bear Branch Tennis 11", slot: try slot("07:00:00"))
-                == "Bear Branch Tennis 11, 7:00 AM")
+                == "Bear Branch Tennis 11, 7 AM")
     }
 
     /// A VoiceOver user must be told the app does not know, in words, rather
@@ -162,7 +162,7 @@ struct SlotAppearanceTests {
         let label = SlotAppearance.fullLabel(
             court: "Bear Branch Tennis 3", slot: try slot("18:00:00"), status: .unknown(7))
 
-        #expect(label == "Bear Branch Tennis 3, 6:00 PM, Availability unknown")
+        #expect(label == "Bear Branch Tennis 3, 6 PM, Availability unknown")
         #expect(label.contains("Available,") == false)
     }
 }

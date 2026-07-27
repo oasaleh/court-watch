@@ -160,7 +160,7 @@ struct VisibleDayTests {
             availability: try fullDay(), now: clock.now, startingAt: nil)
 
         #expect(day.slots.count == 16)
-        #expect(day.slots.first?.displayString == "7:00 AM")
+        #expect(day.slots.first?.displayString == "7 AM")
     }
 
     @Test("At a quarter past two the two o'clock slot is still shown")
@@ -171,7 +171,7 @@ struct VisibleDayTests {
             availability: try fullDay(), now: clock.now, startingAt: nil)
 
         #expect(day.slots.count == 9)
-        #expect(day.slots.first?.displayString == "2:00 PM")
+        #expect(day.slots.first?.displayString == "2 PM")
         #expect(day.isFinished == false)
     }
 
@@ -183,7 +183,7 @@ struct VisibleDayTests {
             availability: try fullDay(), now: clock.now, startingAt: nil)
 
         #expect(day.slots.count == 1)
-        #expect(day.slots.first?.displayString == "10:00 PM")
+        #expect(day.slots.first?.displayString == "10 PM")
         #expect(day.isFinished == false)
     }
 
@@ -225,7 +225,7 @@ struct VisibleDayTests {
         let day = VisibleDay.resolve(
             availability: try fullDay(), now: clock.now, startingAt: try slot("09:00:00"))
 
-        #expect(day.slots.first?.displayString == "9:00 AM")
+        #expect(day.slots.first?.displayString == "9 AM")
         #expect(day.slots.count == 14, "9 AM through 10 PM inclusive")
         #expect(day.isFinished == false)
     }
@@ -238,7 +238,7 @@ struct VisibleDayTests {
         let day = VisibleDay.resolve(
             availability: try fullDay(), now: clock.now, startingAt: nil)
 
-        #expect(day.slots.first?.displayString == "9:00 PM")
+        #expect(day.slots.first?.displayString == "9 PM")
     }
 
     /// A user looking at a specific hour is never told the day is over — they
@@ -399,7 +399,7 @@ struct VisibleDayTests {
         let summary = try #require(day.summary(for: facility))
 
         // 8:00 is the earliest slot anyone is free, and exactly one court is.
-        #expect(summary.slot.displayString == "8:00 AM")
+        #expect(summary.slot.displayString == "8 AM")
         #expect(summary.freeCourts == 1)
     }
 
@@ -420,7 +420,7 @@ struct VisibleDayTests {
             VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
                 .summary(for: facility))
 
-        #expect(summary.slot.displayString == "7:00 AM")
+        #expect(summary.slot.displayString == "7 AM")
         #expect(summary.freeCourts == 2)
     }
 
@@ -477,7 +477,7 @@ struct VisibleDayTests {
         let day = VisibleDay.resolve(
             availability: data, now: clock.now, startingAt: try slot("09:00:00"))
 
-        #expect(day.summary(for: facility)?.slot.displayString == "9:00 AM")
+        #expect(day.summary(for: facility)?.slot.displayString == "9 AM")
     }
 
     /// The slot length comes from the payload, not from this file. A 30-minute

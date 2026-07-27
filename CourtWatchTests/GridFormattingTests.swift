@@ -58,12 +58,12 @@ nonisolated enum GridFormattingCases {
     /// An API slot string against the twelve-hour form the user must see, on any
     /// device however it is configured.
     static let slotDisplays: [(String, String)] = [
-        ("07:00:00", "7:00 AM"),
-        ("11:00:00", "11:00 AM"),
-        ("12:00:00", "12:00 PM"),  // noon is PM, and not "0:00"
-        ("13:00:00", "1:00 PM"),
-        ("18:00:00", "6:00 PM"),
-        ("22:00:00", "10:00 PM"),
+        ("07:00:00", "7 AM"),
+        ("11:00:00", "11 AM"),
+        ("12:00:00", "12 PM"),  // noon is PM, and not "0:00"
+        ("13:00:00", "1 PM"),
+        ("18:00:00", "6 PM"),
+        ("22:00:00", "10 PM"),
     ]
 }
 
@@ -103,7 +103,7 @@ struct GridFormattingTests {
     func rendersSummaryLine() throws {
         let summary = FacilitySummary(slot: try slot("18:00:00"), freeCourts: 4)
 
-        #expect(AvailabilitySummaryText.line(for: summary) == "4 free at 6:00 PM")
+        #expect(AvailabilitySummaryText.line(for: summary) == "4 free at 6 PM")
     }
 
     @Test("A facility with nothing left says so instead of naming a time")
@@ -118,7 +118,7 @@ struct GridFormattingTests {
     func rendersSummaryCountPlainly() throws {
         let summary = FacilitySummary(slot: try slot("11:00:00"), freeCourts: 11)
 
-        #expect(AvailabilitySummaryText.line(for: summary) == "11 free at 11:00 AM")
+        #expect(AvailabilitySummaryText.line(for: summary) == "11 free at 11 AM")
     }
 
     // MARK: - The hour ruler
@@ -137,7 +137,7 @@ struct GridFormattingTests {
         // Every third hour at default sizes, computed rather than hardcoded.
         #expect(
             labels.compactMap { $0 } == [
-                "7:00 AM", "10:00 AM", "1:00 PM", "4:00 PM", "7:00 PM", "10:00 PM",
+                "7 AM", "10 AM", "1 PM", "4 PM", "7 PM", "10 PM",
             ])
     }
 
@@ -152,7 +152,7 @@ struct GridFormattingTests {
             let labels = HourRuler.labels(
                 for: slots, cellWidth: cellWidth, dynamicTypeSize: .large)
 
-            #expect((labels.first ?? nil) == "7:00 AM", "at \(width)pt")
+            #expect((labels.first ?? nil) == "7 AM", "at \(width)pt")
         }
     }
 
@@ -185,10 +185,10 @@ struct GridFormattingTests {
         let label = SlotAppearance.fullLabel(
             court: "Bear Branch Tennis 3", slot: try slot("18:00:00"), status: .available)
 
-        #expect(label == "Bear Branch Tennis 3, 6:00 PM, Available")
+        #expect(label == "Bear Branch Tennis 3, 6 PM, Available")
     }
 
-    /// A VoiceOver user on a 24-hour device must still hear "2:00 PM". This is
+    /// A VoiceOver user on a 24-hour device must still hear "2 PM". This is
     /// the announcement, so it is the string that matters.
     @Test("Every state's spoken label keeps the twelve-hour time")
     func spokenLabelHoldsAcrossStates() throws {
@@ -198,7 +198,7 @@ struct GridFormattingTests {
             let label = SlotAppearance.fullLabel(
                 court: "Shadowbend Tennis 1", slot: time, status: status)
 
-            #expect(label.hasPrefix("Shadowbend Tennis 1, 2:00 PM, "), "\(label)")
+            #expect(label.hasPrefix("Shadowbend Tennis 1, 2 PM, "), "\(label)")
             #expect(label.contains("14:00") == false, "\(label)")
         }
     }
@@ -218,13 +218,16 @@ struct GridFormattingTests {
     func rendersEveryPublishedSlot() throws {
         let rendered = try publishedSlots.map { try slot($0).displayString }
 
-        #expect(rendered.first == "7:00 AM")
-        #expect(rendered.last == "10:00 PM")
+        #expect(rendered.first == "7 AM")
+        #expect(rendered.last == "10 PM")
         #expect(rendered.allSatisfy { $0.hasSuffix(" AM") || $0.hasSuffix(" PM") })
-        #expect(rendered.contains { $0.contains(":") })
+
+        // No minutes on an hourly schedule. Those three characters are what
+        // decide whether a cell can label itself, and ":00" says nothing.
+        #expect(rendered.allSatisfy { $0.contains(":") == false })
 
         // The list tier joins them exactly this way.
-        #expect(rendered.prefix(3).joined(separator: ", ") == "7:00 AM, 8:00 AM, 9:00 AM")
+        #expect(rendered.prefix(3).joined(separator: ", ") == "7 AM, 8 AM, 9 AM")
     }
 
     // MARK: - The start-time filter's choice labels
@@ -234,9 +237,9 @@ struct GridFormattingTests {
     /// 24-hour device an unpinned label would read "From 18:00".
     @Test("A filter choice reads as a twelve-hour time")
     func rendersFilterChoiceLabel() throws {
-        #expect(StartTimeFilter(start: try slot("18:00:00")).label == "From 6:00 PM")
-        #expect(StartTimeFilter(start: try slot("09:00:00")).label == "From 9:00 AM")
-        #expect(StartTimeFilter(start: try slot("12:00:00")).label == "From 12:00 PM")
+        #expect(StartTimeFilter(start: try slot("18:00:00")).label == "From 6 PM")
+        #expect(StartTimeFilter(start: try slot("09:00:00")).label == "From 9 AM")
+        #expect(StartTimeFilter(start: try slot("12:00:00")).label == "From 12 PM")
     }
 
     @Test("The unfiltered choice names no time at all")
@@ -263,10 +266,10 @@ struct GridFormattingTests {
         #expect(
             choices.map(\.label) == [
                 "Now",
-                "From 7:00 AM", "From 8:00 AM", "From 9:00 AM", "From 10:00 AM",
-                "From 11:00 AM", "From 12:00 PM", "From 1:00 PM", "From 2:00 PM",
-                "From 3:00 PM", "From 4:00 PM", "From 5:00 PM", "From 6:00 PM",
-                "From 7:00 PM", "From 8:00 PM", "From 9:00 PM", "From 10:00 PM",
+                "From 7 AM", "From 8 AM", "From 9 AM", "From 10 AM",
+                "From 11 AM", "From 12 PM", "From 1 PM", "From 2 PM",
+                "From 3 PM", "From 4 PM", "From 5 PM", "From 6 PM",
+                "From 7 PM", "From 8 PM", "From 9 PM", "From 10 PM",
             ])
     }
 

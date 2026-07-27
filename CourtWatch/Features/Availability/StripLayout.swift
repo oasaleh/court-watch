@@ -37,7 +37,9 @@ nonisolated enum StripLayout: Hashable, Sendable, Comparable {
     /// density is exactly the encoding that does not need one.
     case dense
 
-    /// Block plus a checkmark, cross or question mark.
+    /// Block plus a glyph — but only when the user has declined colour. With
+    /// colour carrying the state a cell at this width draws as a bare block, so
+    /// it needs the hour ruler just as much as the dense tier does.
     case glyph
 
     /// Block, symbol, and the hour written inside the cell. No ruler needed —
@@ -50,6 +52,23 @@ nonisolated enum StripLayout: Hashable, Sendable, Comparable {
     /// Ordered last because it is the most a cell can say, not because it is
     /// the widest. It is reached by text size rather than by width.
     case list
+}
+
+extension StripLayout {
+
+    /// Whether the rows need an hour ruler above them.
+    ///
+    /// True whenever a cell cannot say its own time. Only the labelled tier
+    /// writes the hour inside the cell; `dense` never could, and `glyph` stopped
+    /// being able to when the symbols were dropped in favour of colour. A tier
+    /// that draws a bare block and gets no ruler leaves a screen of coloured
+    /// squares with nothing anywhere saying which hour is which.
+    var needsHourRuler: Bool {
+        switch self {
+        case .dense, .glyph: true
+        case .labeled, .list: false
+        }
+    }
 }
 
 extension StripLayout {

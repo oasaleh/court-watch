@@ -101,7 +101,7 @@ struct FacilityAvailabilitySection: View {
 
     var body: some View {
         Section {
-            if layout == .dense {
+            if layout.needsHourRuler {
                 ruler
             }
 
@@ -132,11 +132,12 @@ struct FacilityAvailabilitySection: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// Drawn only in the dense tier.
+    /// Drawn whenever a cell cannot carry its own hour.
     ///
-    /// From the glyph tier upward a cell can carry its own hour, and in the
-    /// labelled tier it definitely does, so a ruler there would be duplicate ink
-    /// saying what every cell already says.
+    /// In the labelled tier every cell writes its time, so a ruler there would
+    /// be duplicate ink. Below that width a cell is a bare block, and without
+    /// this the screen is coloured squares with no way to tell which hour is
+    /// which.
     private var ruler: some View {
         HStack(spacing: StripLayout.defaultSpacing) {
             Text("Now")

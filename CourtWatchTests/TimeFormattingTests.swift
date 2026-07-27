@@ -150,6 +150,10 @@ struct TimeFormattingTests {
         #expect(devicePattern.string(from: reference) == deviceMeridiem)
 
         #expect(CourtTime.display.string(from: reference) == "2:00 PM")
-        #expect(SlotTime(apiString: "14:00:00")?.displayString == "2:00 PM")
+
+        // The hour-only formatter is what the grid actually draws, so it needs
+        // pinning under the same hostile locales as the one with minutes.
+        #expect(CourtTime.displayHour.string(from: reference) == "2 PM")
+        #expect(SlotTime(apiString: "14:00:00")?.displayString == "2 PM")
     }
 }

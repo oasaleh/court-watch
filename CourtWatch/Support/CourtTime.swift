@@ -66,6 +66,15 @@ nonisolated enum CourtTime {
     /// leading zero on the hour.
     nonisolated(unsafe) static let display = makeFormatter(pattern: "h:mm a")
 
+    /// The same, without the minutes.
+    ///
+    /// Slots are published on the hour, so "9:00 PM" spends three characters
+    /// saying nothing — and those characters are the ones that decide whether a
+    /// cell can carry its own time at all. Used only where the minutes are known
+    /// to be zero; a timestamp keeps them, because there the minutes are the
+    /// information.
+    nonisolated(unsafe) static let displayHour = makeFormatter(pattern: "h a")
+
     static func string(from date: Date) -> String {
         display.string(from: date)
     }

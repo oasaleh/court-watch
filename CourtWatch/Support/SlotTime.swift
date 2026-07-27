@@ -58,7 +58,13 @@ nonisolated struct SlotTime: Hashable, Sendable, Comparable {
     }
 
     var displayString: String {
-        CourtTime.display.string(from: date(on: Date()))
+        // On the hour the minutes carry no information and cost the width that
+        // decides whether a cell can label itself. Off the hour they are kept,
+        // so a future half-hourly schedule reads correctly without a change
+        // here — "9 PM" would otherwise name two different slots.
+        let formatter = minute == 0 ? CourtTime.displayHour : CourtTime.display
+
+        return formatter.string(from: date(on: Date()))
     }
 
     /// The `"HH:mm:ss"` form the API expects when a request narrows the time
