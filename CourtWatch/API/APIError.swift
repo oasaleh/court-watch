@@ -27,6 +27,22 @@ nonisolated enum APIError: Error, Equatable, Sendable {
     /// The response arrived but did not have the expected shape.
     case decoding(String)
 
+    /// The response was not the API at all.
+    ///
+    /// Split out from `decoding` because the HTTP status is deliberately never
+    /// judged — the endpoint answers 200 for everything — so a WAF
+    /// interstitial or a captive-portal login page arrives as a body that fails
+    /// to parse and would otherwise be reported as a schema change.
+    ///
+    /// The two deserve opposite sentences. "The court system changed and the
+    /// app needs an update" is honest for a shape change and misleading for a
+    /// block page, and given that an F5 ASM WAF fronts the host, the block page
+    /// is the more likely of the two.
+    ///
+    /// Carries nothing. There is no diagnostic here worth the risk of putting a
+    /// third party's HTML anywhere near a screen.
+    case notJSON
+
     /// A non-success code that re-handshaking will not fix.
     case service(code: String, message: String?)
 
@@ -54,6 +70,8 @@ nonisolated enum APIError: Error, Equatable, Sendable {
             return "The court system returned an unexpected response. Try again shortly."
         case .decoding:
             return "The court system's response could not be read. It may have changed."
+        case .notJSON:
+            return "Something is between this app and the court system."
         case .service(_, let message):
             return message ?? "The court system rejected the request."
         case .sessionExpired:

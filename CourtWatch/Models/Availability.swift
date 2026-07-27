@@ -96,9 +96,20 @@ nonisolated struct Availability: Sendable {
     /// Courts whose slot array did not match the published slot list.
     ///
     /// These are still present in `courts`, with the slots that could be
-    /// paired. Naming them here gives Phase 5 something honest to surface
-    /// instead of silently showing a short row.
+    /// paired. Naming them here is what lets the interface say plainly that a
+    /// court reported partial data instead of silently showing a short row.
     let degradedCourts: [String]
+
+    /// How many resources the payload carried that could not be read at all.
+    ///
+    /// Kept distinct from `degradedCourts`, and the distinction matters: a
+    /// degraded court is one you can still see, with some hours it said nothing
+    /// about, while an unreadable one is not on the screen at all. Merging them
+    /// would tell the user the wrong thing about what they are looking at.
+    ///
+    /// A count rather than names, because a resource whose name or id is what
+    /// failed to decode has nothing to be named by.
+    let unreadableCourts: Int
 
     init(envelope: AvailabilityEnvelope) {
         let wire = envelope.body.availability
@@ -116,8 +127,18 @@ nonisolated struct Availability: Sendable {
             // fewer details than there are slot times cannot over-index. The
             // mismatch is recorded rather than thrown: one malformed resource
             // must not cost the user the other seventy-nine.
+            //
+            // A detail whose status could not be read still arrives here, in
+            // its own place, carrying no value — so it becomes an hour the app
+            // says nothing about rather than a hole that pulls the rest of the
+            // row forward. That placeholder is the whole reason the wire type
+            // decodes the field as an optional.
             let slots = zip(times, resource.timeSlotDetails).map { time, detail in
-                CourtSlot(time: time, status: SlotStatus(rawStatus: detail.status))
+                CourtSlot(
+                    time: time,
+                    status: detail.status.map { raw in SlotStatus(rawStatus: raw) }
+                        ?? .unpublished
+                )
             }
 
             if resource.timeSlotDetails.count != times.count {
@@ -138,6 +159,7 @@ nonisolated struct Availability: Sendable {
         self.slotTimes = times
         self.courts = courts
         self.degradedCourts = degraded
+        self.unreadableCourts = wire.droppedResources
 
         // Guarded rather than trusted. The field is optional on the wire and
         // this is an undocumented third-party endpoint, so a missing or

@@ -98,6 +98,34 @@ nonisolated struct AvailabilityClient: Sendable {
         }
     }
 
+    /// Whether a body even claims to be JSON, judged by its first meaningful
+    /// byte and nothing else.
+    ///
+    /// Deliberately this boring. It needs to be right in the common case — an
+    /// HTML block page, a login interstitial, an empty body — not clever, and
+    /// anything that inspected further would be guessing about a system that
+    /// belongs to someone else. A body that starts with `{` or `[` and then
+    /// fails to parse is a schema change; anything else was never the API.
+    static func looksLikeJSON(_ data: Data) -> Bool {
+        for byte in data {
+            switch byte {
+            // Leading whitespace is legal and common: space, tab, newline,
+            // carriage return.
+            case 0x20, 0x09, 0x0A, 0x0D:
+                continue
+
+            case UInt8(ascii: "{"), UInt8(ascii: "["):
+                return true
+
+            default:
+                return false
+            }
+        }
+
+        // Empty, or nothing but whitespace. Not the API either.
+        return false
+    }
+
     static func makeBody(day: Date, window: SlotWindow?) -> AvailabilityRequestBody {
         AvailabilityRequestBody(
             facilityGroupID: tennisFacilityGroupID,
@@ -144,8 +172,21 @@ nonisolated struct AvailabilityClient: Sendable {
             do {
                 envelope = try JSONDecoder().decode(AvailabilityEnvelope.self, from: data)
             } catch {
-                // Not a session problem. Re-handshaking would not change the
-                // shape of the response.
+                // Not a session problem either way. Re-handshaking would not
+                // change the shape of the response, so both paths are terminal
+                // for this request and neither issues a second POST.
+                //
+                // Which of the two it is decides what the user is told, and the
+                // difference is worth one look at the first byte: the HTTP
+                // status is deliberately never judged here, so a WAF
+                // interstitial or a captive-portal page arrives exactly like a
+                // schema change. Telling someone the app needs updating when
+                // they are merely being filtered sends them to the App Store to
+                // fix a network problem.
+                guard Self.looksLikeJSON(data) else {
+                    throw APIError.notJSON
+                }
+
                 throw APIError.decoding(String(describing: error))
             }
 
