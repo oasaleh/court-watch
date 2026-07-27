@@ -54,14 +54,25 @@ struct ContentView: View {
     /// It carries the fetch moment in the same case for the same reason: a
     /// timestamp cannot exist without data for it to describe, and cannot
     /// outlive the data it described.
+    ///
+    /// And it carries the window the data was fetched under, for the same
+    /// reason again. Whether the app can answer a widened filter locally depends
+    /// on the two agreeing, so they are written in one transition rather than
+    /// stored separately where they could drift.
     private enum LoadState {
         case loading
-        case loaded(Availability, fetchedAt: Date)
+        case loaded(Availability, fetchedAt: Date, window: RequestedWindow?)
         case failed
     }
 
     @State private var state: LoadState = .loading
     @State private var isChoosingFacilities = false
+
+    /// The active start-time filter.
+    ///
+    /// Narrowing the visible day is done from data already held; only a widening
+    /// the app has computed it cannot serve costs a request.
+    @State private var filter = StartTimeFilter.anyTime
 
     /// The single owner of "now" for the whole screen.
     ///
@@ -90,8 +101,8 @@ struct ContentView: View {
         case .failed:
             failure
 
-        case .loaded(let availability, let fetchedAt):
-            loaded(availability, fetchedAt: fetchedAt)
+        case .loaded(let availability, let fetchedAt, let window):
+            loaded(availability, fetchedAt: fetchedAt, heldWindow: window)
         }
     }
 
@@ -117,21 +128,27 @@ struct ContentView: View {
         }
     }
 
-    private func loaded(_ availability: Availability, fetchedAt: Date) -> some View {
+    private func loaded(
+        _ availability: Availability, fetchedAt: Date, heldWindow: RequestedWindow?
+    ) -> some View {
         let facilities = availability.facilities
 
         return FavoritesScreen(
             facilities: facilities,
             favorites: favorites,
             day: VisibleDay.resolve(
-                availability: availability, now: clock.now, startingAt: nil),
+                availability: availability, now: clock.now, startingAt: filter.start),
             onChooseFacilities: { isChoosingFacilities = true }
         )
         // The platform pull gesture, awaiting the same load path the initial
         // task uses. One function, two callers: a second copy would drift, and
         // the retry-and-handshake behaviour lives in the client where it is
         // already tested.
-        .refreshable { await load() }
+        //
+        // The active window travels with it. A refresh is a round trip that is
+        // being paid for anyway, which is the one moment server-side trimming is
+        // a real saving rather than an extra request.
+        .refreshable { await load(window: filter.window(over: availability.slotTimes)) }
         // Pinned to the bottom edge rather than placed in the list, so it stays
         // visible however far the user has scrolled. UI-07 is about not having
         // to hunt for it.
@@ -145,6 +162,29 @@ struct ContentView: View {
                 .accessibilityLabel("Last updated \(CourtTime.string(from: fetchedAt))")
         }
         .toolbar {
+            // The active choice is shown, not just an icon. A user who has
+            // forgotten they set a six o'clock filter and sees three slots must
+            // be able to see why — otherwise the app is lying by omission about
+            // how busy the courts are.
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    ForEach(StartTimeFilter.choices) { choice in
+                        Button {
+                            apply(choice, over: availability, heldWindow: heldWindow)
+                        } label: {
+                            if choice == filter {
+                                Label(choice.label, systemImage: "checkmark")
+                            } else {
+                                Text(choice.label)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(filter.label, systemImage: "clock")
+                        .labelStyle(.titleAndIcon)
+                }
+            }
+
             // The second route into the picker: the invitation is for
             // someone who has chosen nothing, this is for someone who has
             // and wants to change it. A semantic placement rather than a
@@ -169,16 +209,46 @@ struct ContentView: View {
         }
     }
 
-    /// The one path to the network, for both the first load and every refresh.
-    private func load() async {
+    /// Changes the filter, and fetches only if the data in hand cannot answer it.
+    ///
+    /// Narrowing, or widening while the whole day is still held, is served
+    /// locally and costs nothing. Widening past what a windowed refresh left
+    /// behind is the one case that must go back to the server — and the answer
+    /// is computed by `covers`, never guessed.
+    private func apply(
+        _ choice: StartTimeFilter, over availability: Availability,
+        heldWindow: RequestedWindow?
+    ) {
+        filter = choice
+
+        let requested = choice.window(over: availability.slotTimes)
+        guard StartTimeFilter.covers(held: heldWindow, requested: requested) == false else {
+            return
+        }
+
+        Task { await load(window: requested) }
+    }
+
+    /// The one path to the network, for the first load, every refresh, and the
+    /// occasional filter change that genuinely needs one.
+    private func load(window: RequestedWindow? = nil) async {
         do {
             let client = AvailabilityClient(session: CourtSession())
-            let availability = try await client.fetch(on: clock.today)
 
-            // Data and the moment it arrived are stored in one transition, so
-            // they cannot drift apart. The moment comes from the injected clock
-            // rather than a fresh system read, so a test can pin it.
-            state = .loaded(availability, fetchedAt: clock.now)
+            // The translation from "what window is wanted" to "how the client is
+            // asked for it" happens here, because this is the only file allowed
+            // to know both.
+            let clientWindow = window.map { wanted in
+                AvailabilityClient.SlotWindow(start: wanted.start, end: wanted.end)
+            }
+
+            let availability = try await client.fetch(on: clock.today, window: clientWindow)
+
+            // Data, the moment it arrived, and the window it came from are
+            // stored in one transition, so they cannot drift apart. The moment
+            // comes from the injected clock rather than a fresh system read, so
+            // a test can pin it.
+            state = .loaded(availability, fetchedAt: clock.now, window: window)
         } catch {
             // A refresh that fails keeps the last good data *and its original
             // timestamp* on screen. Replacing a working grid with an error is

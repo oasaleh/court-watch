@@ -226,4 +226,40 @@ struct GridFormattingTests {
         // The list tier joins them exactly this way.
         #expect(rendered.prefix(3).joined(separator: ", ") == "7:00 AM, 8:00 AM, 9:00 AM")
     }
+
+    // MARK: - The start-time filter's choice labels
+
+    /// New user-visible time strings, so they need asserting here for the same
+    /// reason as everything above: the toolbar shows the active choice, and on a
+    /// 24-hour device an unpinned label would read "From 18:00".
+    @Test("A filter choice reads as a twelve-hour time")
+    func rendersFilterChoiceLabel() throws {
+        #expect(StartTimeFilter(start: try slot("18:00:00")).label == "From 6:00 PM")
+        #expect(StartTimeFilter(start: try slot("09:00:00")).label == "From 9:00 AM")
+        #expect(StartTimeFilter(start: try slot("12:00:00")).label == "From 12:00 PM")
+    }
+
+    @Test("The unfiltered choice names no time at all")
+    func rendersUnfilteredChoiceLabel() {
+        #expect(StartTimeFilter.anyTime.label == "Any time")
+    }
+
+    /// Every choice the control can offer, so adding one cannot slip past the
+    /// twelve-hour gate unasserted.
+    @Test("Every offered choice is twelve-hour and none shows a 24-hour time")
+    func rendersEveryFilterChoice() {
+        for choice in StartTimeFilter.choices where choice.start != nil {
+            #expect(choice.label.hasPrefix("From "), "\(choice.label)")
+            #expect(
+                choice.label.hasSuffix(" AM") || choice.label.hasSuffix(" PM"), "\(choice.label)")
+        }
+
+        // The whole offered set, written out, so a reordering or a new entry has
+        // to be looked at rather than silently absorbed.
+        #expect(
+            StartTimeFilter.choices.map(\.label) == [
+                "Any time", "From 9:00 AM", "From 12:00 PM",
+                "From 3:00 PM", "From 6:00 PM", "From 8:00 PM",
+            ])
+    }
 }
