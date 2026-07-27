@@ -281,30 +281,31 @@ struct GridFormattingTests {
                 == "Updated 2:00 PM")
     }
 
-    /// The disclosure that stops a narrowed day reading as a quiet one. Both
-    /// times are twelve-hour, and the filter is named first because that is the
-    /// part that explains what the user is looking at.
-    @Test("An active filter is named in the status line, before the refresh time")
+    /// The active filter is named in the toolbar control that sets it, not
+    /// repeated here. Saying it in both places put the same sentence twice on
+    /// one screen.
+    @Test("The status line is the refresh time whether or not a filter is set")
     func rendersFilteredStatusLine() throws {
         let line = try StatusLineText.line(
             filter: StartTimeFilter(start: try slot("18:00:00")),
             fetchedAt: referenceInstant())
 
-        #expect(line == "From 6:00 PM · Updated 2:00 PM")
+        #expect(line == "Updated 2:00 PM")
         #expect(line.contains("18:00") == false)
         #expect(line.contains("14:00") == false)
     }
 
-    @Test("Every offered filter produces a status line naming it")
+    /// Whatever the filter, the line stays twelve-hour and says only how old the
+    /// data is — the one thing that cannot be read anywhere else on screen.
+    @Test("Every offered filter leaves the status line reading only the refresh time")
     func statusLineNamesEveryFilter() throws {
         let reference = try referenceInstant()
         let slots = try publishedSlots.map { try slot($0) }
 
-        for choice in StartTimeFilter.choices(for: slots) where choice.start != nil {
+        for choice in StartTimeFilter.choices(for: slots) {
             let line = StatusLineText.line(filter: choice, fetchedAt: reference)
 
-            #expect(line.hasPrefix(choice.label), "\(line)")
-            #expect(line.hasSuffix("Updated 2:00 PM"), "\(line)")
+            #expect(line == "Updated 2:00 PM", "\(choice.label) -> \(line)")
         }
     }
 }

@@ -210,6 +210,50 @@ struct VisibleDayTests {
         #expect(day.isFinished)
     }
 
+    // MARK: - An explicit start time overrides the hide-the-past rule
+
+    /// Picking an hour is an instruction, not a preference.
+    ///
+    /// Without a filter the app hides what has ended, because an elapsed slot is
+    /// noise. But a user who deliberately chooses 9 AM at nine in the evening is
+    /// asking to see the morning, and returning an empty screen would be the app
+    /// overruling a direct request.
+    @Test("An earlier start time reaches back past the current hour")
+    func explicitStartShowsElapsedSlots() throws {
+        let clock = FixedClock(now: try central(hour: 21))
+
+        let day = VisibleDay.resolve(
+            availability: try fullDay(), now: clock.now, startingAt: try slot("09:00:00"))
+
+        #expect(day.slots.first?.displayString == "9:00 AM")
+        #expect(day.slots.count == 14, "9 AM through 10 PM inclusive")
+        #expect(day.isFinished == false)
+    }
+
+    /// The default is unchanged: with nothing asked for, the past stays hidden.
+    @Test("Without a filter the elapsed hours are still hidden")
+    func defaultStillHidesThePast() throws {
+        let clock = FixedClock(now: try central(hour: 21))
+
+        let day = VisibleDay.resolve(
+            availability: try fullDay(), now: clock.now, startingAt: nil)
+
+        #expect(day.slots.first?.displayString == "9:00 PM")
+    }
+
+    /// A user looking at a specific hour is never told the day is over — they
+    /// asked to see something and the app shows it.
+    @Test("An explicit start time is never answered with done-for-today")
+    func explicitStartIsNeverFinished() throws {
+        let clock = FixedClock(now: try central(hour: 23))
+
+        let day = VisibleDay.resolve(
+            availability: try fullDay(), now: clock.now, startingAt: try slot("07:00:00"))
+
+        #expect(day.isFinished == false)
+        #expect(day.slots.count == 16, "the whole published day")
+    }
+
     // MARK: - Rows
 
     /// Count-only would pass against a row holding the right number of the
@@ -307,17 +351,18 @@ struct VisibleDayTests {
         #expect(day.isFinished == false)
     }
 
-    /// The two predicates are independent and applied in order, so a filter
-    /// pointing into the past can only ever narrow.
-    @Test("A start filter earlier than now cannot resurrect an elapsed slot")
-    func cannotResurrectElapsedSlots() throws {
+    /// The filter is applied to the whole published day rather than to what is
+    /// left of it, so naming an earlier hour shows that hour. The elapsed rule
+    /// governs the default view, not an explicit request.
+    @Test("A start filter earlier than now reaches back to the hour it names")
+    func reachesBackToTheNamedHour() throws {
         let clock = FixedClock(now: try central(hour: 14))
 
         let day = VisibleDay.resolve(
             availability: try fullDay(), now: clock.now, startingAt: try slot("07:00:00"))
 
-        #expect(day.slots.count == 9)
-        #expect(day.slots.first?.hour == 14)
+        #expect(day.slots.count == 16)
+        #expect(day.slots.first?.hour == 7)
     }
 
     /// An empty list because of a filter is not a day that has ended. Conflating

@@ -128,14 +128,17 @@ struct StartTimeFilterTests {
         #expect(day.slots.map(\.hour) == [18, 19, 20, 21, 22])
     }
 
-    @Test("A filter earlier than now cannot resurrect a slot that has passed")
-    func cannotResurrectElapsedSlots() throws {
+    /// The rule this replaced said a filter could only ever narrow. It now
+    /// reaches back: asking for 7 AM at two in the afternoon shows the morning,
+    /// because asking is an instruction rather than a preference.
+    @Test("A filter earlier than now reaches back to the hour it names")
+    func reachesBackToTheNamedHour() throws {
         let day = VisibleDay.resolve(
             availability: try fullDay(), now: try central(hour: 14),
             startingAt: try filter("07:00:00").start)
 
-        #expect(day.slots.count == 9)
-        #expect(day.slots.first?.hour == 14)
+        #expect(day.slots.count == 16)
+        #expect(day.slots.first?.hour == 7)
     }
 
     /// An empty screen caused by a filter is not a day that has ended, and the

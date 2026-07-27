@@ -33,22 +33,17 @@ nonisolated enum LastRefreshedText {
     }
 }
 
-/// The always-visible status line: what is being shown, and how old it is.
+/// The always-visible status line: how old the data is.
 ///
-/// The filter is named here as well as in the toolbar because this line cannot
-/// collapse. A toolbar control can and does reduce itself to a bare icon when
-/// space is tight, and the one thing that must never be hidden is that the user
-/// is looking at a deliberately narrowed day — otherwise a filtered evening
-/// reads as a fully booked one, which is the app lying by omission about how
-/// busy the courts are.
+/// The active filter is deliberately *not* repeated here. It is named in the
+/// toolbar, in the control that sets it, where state belongs next to the thing
+/// that changes it — and that control uses `Text`, which was measured not to
+/// collapse to a bare icon the way a `Label` does. Saying it twice on one screen
+/// was noise.
 nonisolated enum StatusLineText {
 
     static func line(filter: StartTimeFilter, fetchedAt: Date) -> String {
-        let updated = LastRefreshedText.line(at: fetchedAt)
-
-        guard filter.start != nil else { return updated }
-
-        return "\(filter.label) · \(updated)"
+        LastRefreshedText.line(at: fetchedAt)
     }
 }
 
@@ -222,7 +217,7 @@ struct ContentView: View {
             // and wants to change it. A semantic placement rather than a
             // navigation-bar one, so it stays correct on iPad.
             ToolbarItem(placement: .primaryAction) {
-                Button("Facilities", systemImage: "slider.horizontal.3") {
+                Button("Facilities", systemImage: "sportscourt") {
                     isChoosingFacilities = true
                 }
             }

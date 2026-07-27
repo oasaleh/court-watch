@@ -37,15 +37,20 @@ nonisolated struct VisibleDay: Sendable, Equatable {
     /// The slots still worth showing, after both filters.
     let slots: [SlotTime]
 
-    /// True when every published slot has fully elapsed — the whole schedule is
-    /// behind us and TIME-07's done-for-today state is correct.
+    /// True when every published slot has fully elapsed and the user has not
+    /// asked to look at a particular hour — the whole schedule is behind us and
+    /// TIME-07's done-for-today state is correct.
     ///
     /// Deliberately not "`slots` is empty". A start-time filter can empty the
     /// visible list on a day that is far from over, and a fully booked facility
     /// empties nothing at all. Telling a user at lunchtime to go home because
     /// they asked to see only evening slots, or because one place is busy,
-    /// would be a lie in two different ways. This flag answers one question:
-    /// has the day itself ended.
+    /// would be a lie in two different ways.
+    ///
+    /// Equally, a user who has explicitly asked for the morning is never told
+    /// the day is over: they asked to see something specific and the app shows
+    /// it. This flag answers one question — has the day itself ended, with
+    /// nothing asked of it.
     let isFinished: Bool
 
     /// Court id to that court's statuses for exactly `slots`, in the same order.
@@ -67,6 +72,13 @@ nonisolated struct VisibleDay: Sendable, Equatable {
     /// identical at a call site, and while the safe direction — showing more —
     /// is the one a mistake would take here, saying `nil` out loud costs a word
     /// and removes the ambiguity.
+    ///
+    /// **A start time is an explicit instruction and overrides the hide-the-past
+    /// rule.** With no filter the app shows only what is still to come, because
+    /// a slot that has ended is noise. But a user who deliberately picks 9 AM at
+    /// nine in the evening is asking to see the morning, and answering an
+    /// explicit request with an empty screen is the app second-guessing them.
+    /// TIME-04 governs the default; it does not govern a direct instruction.
     static func resolve(
         availability: Availability,
         now: Date,
@@ -80,9 +92,10 @@ nonisolated struct VisibleDay: Sendable, Equatable {
             $0.isElapsed(now: now, slotMinutes: availability.slotMinutes) == false
         }
 
-        // A second, independent predicate applied after the first, so a filter
-        // pointing into the past can only narrow and never resurrect.
-        let visible = start.map { start in remaining.filter { $0 >= start } } ?? remaining
+        // With a filter the day is taken whole and cut at the chosen hour, so an
+        // earlier choice reaches back past now. Without one, only what is left.
+        let visible =
+            start.map { start in availability.slotTimes.filter { $0 >= start } } ?? remaining
 
         // Selecting by slot rather than by index arithmetic. Index arithmetic is
         // what breaks on a court publishing fewer statuses than there are slots,
@@ -100,7 +113,7 @@ nonisolated struct VisibleDay: Sendable, Equatable {
 
         return VisibleDay(
             slots: visible,
-            isFinished: remaining.isEmpty,
+            isFinished: remaining.isEmpty && start == nil,
             statusesByCourt: statuses
         )
     }
