@@ -33,17 +33,38 @@ nonisolated enum LastRefreshedText {
     }
 }
 
-/// The always-visible status line: how old the data is.
+/// The status line: how old the data is, and — only when something went wrong —
+/// that the last refresh did not work.
 ///
 /// The active filter is deliberately *not* repeated here. It is named in the
 /// toolbar, in the control that sets it, where state belongs next to the thing
 /// that changes it — and that control uses `Text`, which was measured not to
 /// collapse to a bare icon the way a `Label` does. Saying it twice on one screen
 /// was noise.
+///
+/// A failure is not a second permanent field either: it is present only when
+/// the last refresh failed, which makes it a notice rather than a status.
 nonisolated enum StatusLineText {
 
-    static func line(filter: StartTimeFilter, fetchedAt: Date) -> String {
-        LastRefreshedText.line(at: fetchedAt)
+    /// `failure` defaults to nothing, so the ordinary line is unchanged
+    /// character for character — the most likely regression here is a stray
+    /// separator on a line that is on screen every second the app is open.
+    ///
+    /// The failure's words come from `ErrorPresentation`, the same mapping the
+    /// failure screen uses, rather than from a second short phrase written for
+    /// this line. Two independent strings for one condition is precisely the
+    /// drift that deleting the old copy property was meant to prevent.
+    ///
+    /// Joined with a full stop rather than a separator glyph, because VoiceOver
+    /// reads this as one announcement and a middle dot is not a word.
+    static func line(
+        filter: StartTimeFilter, fetchedAt: Date, failure: APIError? = nil
+    ) -> String {
+        let updated = LastRefreshedText.line(at: fetchedAt)
+
+        guard let failure else { return updated }
+
+        return "\(ErrorPresentation.of(failure).title). \(updated)"
     }
 }
 
@@ -75,7 +96,21 @@ struct ContentView: View {
     /// stored separately where they could drift.
     private enum LoadState {
         case loading
-        case loaded(Availability, fetchedAt: Date, window: RequestedWindow?)
+
+        /// The data, when it arrived, the window it came from, and whether the
+        /// most recent refresh over it failed.
+        ///
+        /// That last one looks like the "loaded with an error still set" state
+        /// this enum was built to forbid, and it is not. Loaded-and-the-last-
+        /// refresh-failed is real, common, and was until now entirely unspoken.
+        /// What must not happen is it being stored *beside* the data, where the
+        /// two can drift — so it lives inside the case, alongside the fetch
+        /// moment and the window, which are there for the identical reason:
+        /// they cannot exist without data to describe and must not outlive it.
+        /// A sibling `@State` flag would reintroduce exactly what the enum
+        /// prevents.
+        case loaded(
+            Availability, fetchedAt: Date, window: RequestedWindow?, lastFailure: APIError?)
 
         /// Carries what went wrong, so the screen can ask the mapping what to
         /// say rather than holding an opinion of its own.
@@ -150,8 +185,10 @@ struct ContentView: View {
         case .failed(let error):
             failure(error)
 
-        case .loaded(let availability, let fetchedAt, let window):
-            loaded(availability, fetchedAt: fetchedAt, heldWindow: window)
+        case .loaded(let availability, let fetchedAt, let window, let lastFailure):
+            loaded(
+                availability, fetchedAt: fetchedAt, heldWindow: window,
+                lastFailure: lastFailure)
         }
     }
 
@@ -209,9 +246,26 @@ struct ContentView: View {
     }
 
     private func loaded(
-        _ availability: Availability, fetchedAt: Date, heldWindow: RequestedWindow?
+        _ availability: Availability, fetchedAt: Date, heldWindow: RequestedWindow?,
+        lastFailure: APIError?
     ) -> some View {
         let facilities = availability.facilities
+        let statusLine = StatusLineText.line(
+            filter: filter, fetchedAt: fetchedAt, failure: lastFailure)
+
+        // A failure pins the line; the countdown belongs to the success case.
+        //
+        // A failure announced for three seconds and then silently withdrawn is
+        // barely better than one never announced — worse, arguably, because the
+        // app then looks settled and correct. This is a *condition* rather than
+        // a second clock on purpose: nothing in this app schedules work, and a
+        // failed refresh deliberately does not advance the fetch moment the
+        // countdown below is keyed on, so no new countdown starts by itself and
+        // none needs to be cancelled.
+        //
+        // **Not covered by the suite** — no test observes a rendered view, so
+        // whether the line actually stays put is a checkpoint line.
+        let showsStatusLine = lastFailure != nil || showsRefreshTime
 
         return FavoritesScreen(
             facilities: facilities,
@@ -240,21 +294,22 @@ struct ContentView: View {
             // Shown briefly after a load rather than pinned. It answers "did
             // that work?" at the moment the question is being asked, and then
             // stops taking up the bottom of every screen for the rest of the
-            // session.
+            // session — unless the answer was *no*, in which case the question
+            // has not been answered but raised, and the line stays until a
+            // later refresh answers it.
             //
             // The space is reserved whether or not the text is drawn, so the
             // grid does not jump when it goes.
-            Text(StatusLineText.line(filter: filter, fetchedAt: fetchedAt))
+            Text(statusLine)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
                 .background(.bar)
-                .opacity(showsRefreshTime ? 1 : 0)
-                .animation(.easeInOut(duration: 0.4), value: showsRefreshTime)
-                .accessibilityLabel(
-                    StatusLineText.line(filter: filter, fetchedAt: fetchedAt))
-                .accessibilityHidden(showsRefreshTime == false)
+                .opacity(showsStatusLine ? 1 : 0)
+                .animation(.easeInOut(duration: 0.4), value: showsStatusLine)
+                .accessibilityLabel(statusLine)
+                .accessibilityHidden(showsStatusLine == false)
                 // Keyed on the fetch moment, so every load — first, refresh, or
                 // filter change — restarts the countdown rather than only the
                 // first one. `.task(id:)` cancels the previous one, so two loads
@@ -380,20 +435,42 @@ struct ContentView: View {
             // Data, the moment it arrived, and the window it came from are
             // stored in one transition, so they cannot drift apart. The moment
             // comes from the injected clock rather than a fresh system read, so
-            // a test can pin it.
-            state = .loaded(availability, fetchedAt: clock.now, window: window)
+            // a test can pin it. A success clears any failure being reported.
+            state = .loaded(
+                availability, fetchedAt: clock.now, window: window, lastFailure: nil)
         } catch {
+            // Anything that is not one of the client's own failures is treated
+            // as the far end not answering: true of every case that can reach
+            // here, retryable, and blaming nothing the user controls.
+            let failure = error as? APIError ?? .transport(.unknown)
+
             // A refresh that fails keeps the last good data *and its original
             // timestamp* on screen. Replacing a working grid with an error is
             // the more common implementation and the wrong one: the user can
             // still use what is there.
-            if case .loaded = state { return }
+            //
+            // The timestamp must not move. Saying "couldn't update" beside a
+            // time that had silently advanced would be a worse lie than saying
+            // nothing at all — which is what the app did until now.
+            if case .loaded = state {
+                state = keepingData(reporting: failure)
+                return
+            }
 
-            // Anything that is not one of the client's own failures is treated
-            // as the far end not answering: true of every case that can reach
-            // here, retryable, and blaming nothing the user controls.
-            state = .failed(error as? APIError ?? .transport(.unknown))
+            state = .failed(failure)
         }
+    }
+
+    /// The held data, its original fetch moment and window, with the failure
+    /// recorded beside them — inside the same case, so the report cannot
+    /// outlive the thing it describes.
+    private func keepingData(reporting failure: APIError) -> LoadState {
+        guard case .loaded(let availability, let fetchedAt, let window, _) = state else {
+            return .failed(failure)
+        }
+
+        return .loaded(
+            availability, fetchedAt: fetchedAt, window: window, lastFailure: failure)
     }
 }
 

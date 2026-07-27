@@ -319,7 +319,154 @@ struct GridFormattingTests {
         for choice in StartTimeFilter.choices(for: slots) {
             let line = StatusLineText.line(filter: choice, fetchedAt: reference)
 
-            #expect(line == "Updated 2:00 PM", "\(choice.label) -> \(line)")
+            #expect(line == "Updated 2:00 PM", "\(choice.label)")
+        }
+    }
+
+    // MARK: - A refresh that failed over data that is still usable
+
+    /// The most likely regression in this area is a stray separator on a line
+    /// that is on screen every second the app is open, so the no-failure case is
+    /// asserted character for character against what it read before.
+    @Test("With nothing wrong the status line is exactly what it was")
+    func statusLineIsUnchangedWithoutAFailure() throws {
+        let reference = try referenceInstant()
+
+        #expect(
+            StatusLineText.line(filter: .fromNow, fetchedAt: reference, failure: nil)
+                == "Updated 2:00 PM")
+        #expect(
+            StatusLineText.line(filter: .fromNow, fetchedAt: reference, failure: nil)
+                == StatusLineText.line(filter: .fromNow, fetchedAt: reference))
+    }
+
+    /// The old signal that a refresh had not worked was a timestamp that did
+    /// not move. Since the line withdraws a few seconds after each load that
+    /// signal is gone, so the failure has to be said out loud — beside the
+    /// unchanged time, which is the pair a user needs to judge whether to walk
+    /// to a court.
+    @Test("A failed refresh names the failure and keeps the original time")
+    func statusLineNamesAFailedRefresh() throws {
+        let line = try StatusLineText.line(
+            filter: .fromNow,
+            fetchedAt: referenceInstant(),
+            failure: .transport(.notConnectedToInternet))
+
+        #expect(line.contains("Updated 2:00 PM"))
+        #expect(line != "Updated 2:00 PM")
+        #expect(line.hasPrefix("No Internet Connection"))
+    }
+
+    /// Asserting only that *a* failure appears would pass a version saying
+    /// "couldn't update" for everything, which throws away the whole taxonomy.
+    @Test("Two failure classes produce two different lines")
+    func failureClassesReadDifferently() throws {
+        let reference = try referenceInstant()
+
+        let offline = StatusLineText.line(
+            filter: .fromNow, fetchedAt: reference, failure: .transport(.notConnectedToInternet))
+        let farEnd = StatusLineText.line(
+            filter: .fromNow, fetchedAt: reference, failure: .transport(.timedOut))
+        let refused = StatusLineText.line(
+            filter: .fromNow, fetchedAt: reference,
+            failure: .service(code: "1507", message: "Invalid request"))
+
+        #expect(offline != farEnd)
+        #expect(offline != refused)
+        #expect(farEnd != refused)
+
+        // All three still carry the age of what is on screen.
+        for line in [offline, farEnd, refused] {
+            #expect(line.contains("Updated 2:00 PM"), "\(line)")
+        }
+    }
+
+    /// One source of failure words. Writing a second short phrase for this line
+    /// is exactly the drift that deleting the old copy property prevented.
+    @Test("The failure words come from the same mapping as the failure screen")
+    func failureWordsComeFromTheMapping() throws {
+        let reference = try referenceInstant()
+
+        for error in ErrorPresentationCases.all {
+            let line = StatusLineText.line(filter: .fromNow, fetchedAt: reference, failure: error)
+
+            #expect(line.hasPrefix(ErrorPresentation.of(error).title), "\(line)")
+        }
+    }
+
+    /// A 24-hour device must not turn this into "14:00", and the meridiem is
+    /// the part that disappears first.
+    @Test("A failed-refresh line is still a twelve-hour time")
+    func failedRefreshLineIsTwelveHour() throws {
+        let line = try StatusLineText.line(
+            filter: .fromNow, fetchedAt: referenceInstant(), failure: .transport(.timedOut))
+
+        #expect(line.contains("2:00 PM"))
+        #expect(line.contains("PM"))
+        #expect(line.contains("14:00") == false)
+        #expect(line.contains("pm") == false)
+    }
+
+    /// The filter is named in the toolbar control that sets it. A failure is a
+    /// notice that appears only when something went wrong, not a second
+    /// permanent field, so setting a filter changes nothing here.
+    @Test("A failed-refresh line reads the same whether or not a filter is set")
+    func failedRefreshLineIgnoresTheFilter() throws {
+        let reference = try referenceInstant()
+        let failure = APIError.transport(.notConnectedToInternet)
+
+        let unfiltered = StatusLineText.line(
+            filter: .fromNow, fetchedAt: reference, failure: failure)
+        let filtered = StatusLineText.line(
+            filter: StartTimeFilter(start: try slot("18:00:00")), fetchedAt: reference,
+            failure: failure)
+
+        #expect(unfiltered == filtered)
+        #expect(filtered.contains("18:00") == false)
+        #expect(filtered.contains("6 PM") == false)
+    }
+
+    /// VoiceOver reads this line as one announcement, so it has to be a
+    /// sentence rather than two fragments jammed together.
+    @Test("A failed-refresh line reads as a complete announcement")
+    func failedRefreshLineIsOneSentence() throws {
+        let reference = try referenceInstant()
+
+        for error in ErrorPresentationCases.all {
+            let line = StatusLineText.line(filter: .fromNow, fetchedAt: reference, failure: error)
+
+            // No doubled or dangling punctuation, and nothing left hanging at
+            // either end.
+            #expect(line.contains("  ") == false, "\(line)")
+            #expect(line.contains("..") == false, "\(line)")
+            #expect(line.hasPrefix(" ") == false, "\(line)")
+            #expect(line.hasSuffix(" ") == false, "\(line)")
+            #expect(line.hasSuffix("PM") || line.hasSuffix("AM"), "\(line)")
+        }
+    }
+
+    /// Nothing technical may reach this line either — it is the same copy, so
+    /// it inherits the same guarantee, and that is worth pinning where it is
+    /// read rather than only where it is written.
+    @Test("A failed-refresh line leaks no decoder text or response code")
+    func failedRefreshLineLeaksNothing() throws {
+        let reference = try referenceInstant()
+
+        let lines = [
+            StatusLineText.line(
+                filter: .fromNow, fetchedAt: reference,
+                failure: .decoding("keyNotFound(CodingKeys(stringValue: \"response_code\"))")),
+            StatusLineText.line(
+                filter: .fromNow, fetchedAt: reference,
+                failure: .service(code: "1507", message: "Invalid request")),
+            StatusLineText.line(
+                filter: .fromNow, fetchedAt: reference, failure: .sessionExpired(code: "0012")),
+        ]
+
+        for line in lines {
+            for marker in ["keyNotFound", "CodingKeys", "response_code", "1507", "0012"] {
+                #expect(line.contains(marker) == false, "\(marker) leaked into: \(line)")
+            }
         }
     }
 }
