@@ -199,29 +199,20 @@ private struct SlotCell: View {
                     .overlay { rectangle.strokeBorder(tint, lineWidth: 2) }
             }
         } else {
-            // Apple Calendar's treatment, at every width: a muted wash of the
-            // hue rather than a saturated block.
+            // A single tinted block, no edge and no border.
             //
-            // The wash alone is not what makes a Calendar event read as
-            // unmistakably green — the **full-strength edge** down its leading
-            // side is. Without it a dark tint on a dark background is just mud,
-            // and green and red stop being tellable apart at a glance. With it,
-            // one saturated stripe per cell restores the hue at a size the eye
-            // catches immediately, without turning the row back into a wall of
-            // solid blocks.
+            // The fill is therefore the only colour signal, which sets a floor
+            // on how muted it can be: too far toward the background and a dark
+            // green and a dark red stop being tellable apart at a glance, which
+            // is the one thing this grid exists to do. The mix below is set
+            // where the two stay obviously different rather than where the wash
+            // looks most restrained.
             //
             // Mixed opaquely into the surface rather than `.opacity()`. A
             // translucent hue takes its result from whatever is behind it and
             // loses chroma over a dark background, which comes out muddy; a
             // perceptual mix against the real surface does not.
-            rectangle
-                .fill(mutedFill)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(tint)
-                        .frame(width: 3)
-                }
-                .clipShape(rectangle)
+            rectangle.fill(mutedFill)
         }
     }
 
@@ -232,10 +223,10 @@ private struct SlotCell: View {
     private var mutedFill: Color {
         let strength: Double =
             switch (colorScheme, contrast) {
-            case (.dark, .increased): 0.52
-            case (.dark, _): 0.38
-            case (_, .increased): 0.28
-            default: 0.20
+            case (.dark, .increased): 0.70
+            case (.dark, _): 0.55
+            case (_, .increased): 0.34
+            default: 0.24
             }
 
         return Color(uiColor: .systemBackground).mix(with: tint, by: strength, in: .perceptual)
