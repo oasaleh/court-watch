@@ -424,7 +424,17 @@ struct ContentView: View {
         defer { isFetching = false }
 
         do {
-            let client = AvailabilityClient(session: CourtSession())
+            // The one conditional the harness costs the app. Everything else
+            // about this path — the client, its retry, its error handling — is
+            // the real thing, which is the whole point of injecting at the
+            // transport rather than posing a screen.
+            #if DEBUG
+                let session = FailureSimulation.makeSession() ?? CourtSession()
+            #else
+                let session = CourtSession()
+            #endif
+
+            let client = AvailabilityClient(session: session)
 
             // The translation from "what window is wanted" to "how the client is
             // asked for it" happens here, because this is the only file allowed
