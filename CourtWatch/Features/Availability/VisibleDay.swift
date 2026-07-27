@@ -30,6 +30,13 @@ nonisolated struct FacilitySummary: Hashable, Sendable {
     /// How many of its courts are free at that slot. Always at least one — a
     /// facility with nothing free has no summary rather than a summary of zero.
     let freeCourts: Int
+
+    /// How many courts the facility has in total.
+    ///
+    /// Carried so the header can say "2 of 5" rather than "2". Two free out of
+    /// two is a quiet court and two out of eleven is a busy one, and the bare
+    /// count cannot tell them apart.
+    let totalCourts: Int
 }
 
 nonisolated struct VisibleDay: Sendable, Equatable {
@@ -146,7 +153,8 @@ nonisolated struct VisibleDay: Sendable, Equatable {
             }
 
             if free > 0 {
-                return FacilitySummary(slot: slot, freeCourts: free)
+                return FacilitySummary(
+                    slot: slot, freeCourts: free, totalCourts: facility.courts.count)
             }
         }
 

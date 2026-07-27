@@ -20,15 +20,21 @@ import SwiftUI
 /// The one derived sentence per facility, as text.
 nonisolated enum AvailabilitySummaryText {
 
-    /// "4 free at 6:00 PM", or "Nothing free today".
+    /// "2 of 5 free at 7 PM", or "Nothing free today".
+    ///
+    /// The total is named alongside the count because the count alone cannot be
+    /// read: two free at a two-court place is a quiet evening, two free at Bear
+    /// Branch's eleven is a busy one.
     ///
     /// One format, always true, never ambiguous about whether "now" means now.
-    /// The count is written with plain interpolation: the numeric convenience
-    /// call is matched by the date-handling guard and fails the build.
+    /// Both numbers are written with plain interpolation: the numeric
+    /// convenience call is matched by the date-handling guard and fails the
+    /// build.
     static func line(for summary: FacilitySummary?) -> String {
         guard let summary else { return "Nothing free today" }
 
-        return "\(summary.freeCourts) free at \(summary.slot.displayString)"
+        return
+            "\(summary.freeCourts) of \(summary.totalCourts) free at \(summary.slot.displayString)"
     }
 }
 

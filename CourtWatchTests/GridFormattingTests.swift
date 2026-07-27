@@ -99,11 +99,12 @@ struct GridFormattingTests {
 
     // MARK: - D9, the facility summary line
 
-    @Test("The summary line names the count and a twelve-hour time")
+    @Test("The summary line names the count, the total and a twelve-hour time")
     func rendersSummaryLine() throws {
-        let summary = FacilitySummary(slot: try slot("18:00:00"), freeCourts: 4)
+        let summary = FacilitySummary(
+            slot: try slot("18:00:00"), freeCourts: 4, totalCourts: 5)
 
-        #expect(AvailabilitySummaryText.line(for: summary) == "4 free at 6 PM")
+        #expect(AvailabilitySummaryText.line(for: summary) == "4 of 5 free at 6 PM")
     }
 
     @Test("A facility with nothing left says so instead of naming a time")
@@ -111,14 +112,24 @@ struct GridFormattingTests {
         #expect(AvailabilitySummaryText.line(for: nil) == "Nothing free today")
     }
 
-    /// The count is written with plain interpolation because the numeric
-    /// convenience call is matched by the date-handling guard. Asserting a
-    /// two-digit count keeps that honest — a grouped "1,000" would show up here.
-    @Test("The summary count is plain digits")
+    /// Both numbers are written with plain interpolation because the numeric
+    /// convenience call is matched by the date-handling guard. Asserting
+    /// two-digit values keeps that honest — a grouped "1,000" would show up here.
+    @Test("The summary counts are plain digits")
     func rendersSummaryCountPlainly() throws {
-        let summary = FacilitySummary(slot: try slot("11:00:00"), freeCourts: 11)
+        let summary = FacilitySummary(
+            slot: try slot("11:00:00"), freeCourts: 11, totalCourts: 11)
 
-        #expect(AvailabilitySummaryText.line(for: summary) == "11 free at 11 AM")
+        #expect(AvailabilitySummaryText.line(for: summary) == "11 of 11 free at 11 AM")
+    }
+
+    /// Every court free reads as such rather than collapsing to a bare count.
+    @Test("A wholly free facility still names the total")
+    func rendersFullyFreeSummary() throws {
+        let summary = FacilitySummary(
+            slot: try slot("07:00:00"), freeCourts: 2, totalCourts: 2)
+
+        #expect(AvailabilitySummaryText.line(for: summary) == "2 of 2 free at 7 AM")
     }
 
     // MARK: - The hour ruler

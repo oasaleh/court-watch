@@ -88,6 +88,18 @@ struct ContentView: View {
     /// the app has computed it cannot serve costs a request.
     @State private var filter = StartTimeFilter.fromNow
 
+    /// Whether the refresh time is currently on screen.
+    ///
+    /// It appears on every load and withdraws a few seconds later. Pinning it
+    /// permanently spent the bottom of every screen on a line that is only
+    /// interesting immediately after a refresh.
+    ///
+    /// Note what this costs: a refresh that fails leaves the old data and its
+    /// original timestamp, and *that unchanged time* was the signal that the
+    /// refresh did not work. Once the line withdraws, the signal goes with it,
+    /// so failure needs to be said out loud rather than implied.
+    @State private var showsRefreshTime = true
+
     /// The single owner of "now" for the whole screen.
     ///
     /// Injectable so that what counts as elapsed, and what the refresh time
@@ -171,14 +183,40 @@ struct ContentView: View {
         // visible however far the user has scrolled. UI-07 is about not having
         // to hunt for it.
         .safeAreaInset(edge: .bottom) {
+            // Shown briefly after a load rather than pinned. It answers "did
+            // that work?" at the moment the question is being asked, and then
+            // stops taking up the bottom of every screen for the rest of the
+            // session.
+            //
+            // The space is reserved whether or not the text is drawn, so the
+            // grid does not jump when it goes.
             Text(StatusLineText.line(filter: filter, fetchedAt: fetchedAt))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
                 .background(.bar)
+                .opacity(showsRefreshTime ? 1 : 0)
+                .animation(.easeInOut(duration: 0.4), value: showsRefreshTime)
                 .accessibilityLabel(
                     StatusLineText.line(filter: filter, fetchedAt: fetchedAt))
+                .accessibilityHidden(showsRefreshTime == false)
+                // Keyed on the fetch moment, so every load — first, refresh, or
+                // filter change — restarts the countdown rather than only the
+                // first one. `.task(id:)` cancels the previous one, so two loads
+                // in quick succession cannot leave an early timer to hide the
+                // later message.
+                .task(id: fetchedAt) {
+                    showsRefreshTime = true
+
+                    try? await Task.sleep(for: .seconds(3))
+
+                    // Cancellation lands here as a no-op: a superseded countdown
+                    // must not hide a message it does not own.
+                    guard Task.isCancelled == false else { return }
+
+                    showsRefreshTime = false
+                }
         }
         .toolbar {
             // The active choice is shown, not just an icon. A user who has
