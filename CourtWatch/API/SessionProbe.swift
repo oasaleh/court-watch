@@ -47,7 +47,6 @@
 import Foundation
 
 nonisolated struct SessionProbe: Sendable {
-
     /// Sent exactly as the browser sends it, including the `options` value.
     ///
     /// `%5Bobject%20Object%5D` is the string `[object Object]` — the web UI
@@ -172,3 +171,14 @@ nonisolated struct SessionProbe: Sendable {
         }
     }
 }
+
+/// The seam the account state is built against, so its suite can answer this
+/// question without a network.
+///
+/// Declared here, beside the only real implementation, because what it means to
+/// "check" is a fact about this endpoint rather than about the screen that asks.
+nonisolated protocol SessionChecking: Sendable {
+    func check() async -> SessionProbe.Outcome
+}
+
+extension SessionProbe: SessionChecking {}

@@ -137,3 +137,15 @@ nonisolated struct SignInClient: Sendable {
         return await probe.check() == .authenticated ? outcome : .succeededWithoutIdentity
     }
 }
+
+/// The seam the account state is built against.
+///
+/// One method, taking what it needs and returning what it found. Note what is
+/// *not* on it: nothing to store a credential in, and nothing to ask it to try
+/// again. A conforming type could not offer an automatic retry without changing
+/// this shape.
+nonisolated protocol SignInPerforming: Sendable {
+    func signIn(as credentials: Credentials) async throws -> SignInOutcome
+}
+
+extension SignInClient: SignInPerforming {}
