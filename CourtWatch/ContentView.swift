@@ -347,14 +347,17 @@ struct ContentView: View {
         // the retry-and-handshake behaviour lives in the client where it is
         // already tested.
         //
-        // The active window travels with it. A refresh is a round trip that is
-        // being paid for anyway, which is the one moment server-side trimming is
-        // a real saving rather than an extra request.
-        .refreshable {
-            await load(
-                window: filter.window(
-                    over: availability.slotTimes, slotMinutes: availability.slotMinutes))
-        }
+        // Always the whole day, never a window.
+        //
+        // Server-side trimming looked like a free saving, but the trimmed
+        // response *is* the app's picture of the day — so after narrowing to
+        // 3 PM the filter menu could only offer 3 PM onwards, and the earlier
+        // hours became unreachable. Narrowing was a one-way door.
+        //
+        // Holding the full day costs one request either way, makes every hour
+        // selectable, and is required regardless: an explicit start time reaches
+        // back past now, which needs hours the server would have trimmed away.
+        .refreshable { await load() }
         // Pinned to the bottom edge rather than placed in the list, so it stays
         // visible however far the user has scrolled. UI-07 is about not having
         // to hunt for it.
@@ -457,19 +460,16 @@ struct ContentView: View {
     /// locally and costs nothing. Widening past what a windowed refresh left
     /// behind is the one case that must go back to the server — and the answer
     /// is computed by `covers`, never guessed.
+    /// Changes the filter. Never fetches.
+    ///
+    /// The whole day is always held, so every filter — narrower or wider — is a
+    /// subset of data already in hand. Instant, free, works offline, and costs
+    /// the WAF-fronted host nothing.
     private func apply(
         _ choice: StartTimeFilter, over availability: Availability,
         heldWindow: RequestedWindow?
     ) {
         filter = choice
-
-        let requested = choice.window(
-            over: availability.slotTimes, slotMinutes: availability.slotMinutes)
-        guard StartTimeFilter.covers(held: heldWindow, requested: requested) == false else {
-            return
-        }
-
-        Task { await load(window: requested) }
     }
 
     /// The one path to the network, for the first load, every refresh, and the
