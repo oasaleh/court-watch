@@ -145,10 +145,10 @@ struct GridFormattingTests {
 
         #expect(labels.count == 16)
 
-        // Every third hour at default sizes, computed rather than hardcoded.
+        // Every fourth hour at default sizes, computed rather than hardcoded.
         #expect(
             labels.compactMap { $0 } == [
-                "7 AM", "10 AM", "1 PM", "4 PM", "7 PM", "10 PM",
+                "7 AM", "11 AM", "3 PM", "7 PM",
             ])
     }
 
@@ -179,7 +179,16 @@ struct GridFormattingTests {
             for: slots, cellWidth: cellWidth, dynamicTypeSize: .xxxLarge
         ).compactMap { $0 }
 
-        #expect(large.count < normal.count)
+        // Asserted on the stride rather than the label count. At narrow cell
+        // widths a stride of 4 and a stride of 5 both yield four labels across
+        // sixteen slots, so counting would report no change while the spacing
+        // had in fact widened.
+        let normalStride = HourRuler.labelStride(
+            cellWidth: cellWidth, dynamicTypeSize: .large)
+        let largeStride = HourRuler.labelStride(
+            cellWidth: cellWidth, dynamicTypeSize: .xxxLarge)
+
+        #expect(largeStride > normalStride, "\(normalStride) -> \(largeStride)")
         #expect(large.allSatisfy { $0.contains("AM") || $0.contains("PM") })
     }
 

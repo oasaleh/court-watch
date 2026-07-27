@@ -81,7 +81,7 @@ extension StripLayout {
 
     /// The gap between two cells. Small on purpose: at 16 slots every point
     /// spent between cells is a point taken off all of them.
-    static let defaultSpacing: Double = 1
+    static let defaultSpacing: Double = 3
 
     /// Below this a cell cannot carry a glyph legibly.
     static let glyphThreshold: Double = 32

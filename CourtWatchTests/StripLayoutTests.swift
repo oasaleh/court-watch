@@ -243,10 +243,12 @@ struct StripLayoutTests {
     /// about 330 points — an iPhone list row — gives ≈17 point cells at 16
     /// slots. If this ever stops holding, every layout decision above inherits
     /// the error.
-    @Test("Sixteen slots in a phone list row are about seventeen points each")
+    @Test("Sixteen slots in a phone list row are about fifteen points each")
     func reproducesThePlannedCellWidth() {
         let cell = StripLayout.cellWidth(availableWidth: 330, slotCount: 16)
 
-        #expect(cell > 16 && cell < 18, "measured \(cell)pt")
+        // Narrower than the original 17pt: the Calendar-style gaps between
+        // blocks are worth ~2pt of cell each across sixteen of them.
+        #expect(cell > 14 && cell < 16, "measured \(cell)pt")
     }
 }

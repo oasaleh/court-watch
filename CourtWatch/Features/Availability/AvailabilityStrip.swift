@@ -29,7 +29,7 @@ struct AvailabilityStrip: View {
 
     /// Grows with the user's text size rather than staying pinned, so the strip
     /// gets taller before it is abandoned altogether at accessibility sizes.
-    @ScaledMetric(relativeTo: .caption) private var cellHeight: CGFloat = 22
+    @ScaledMetric(relativeTo: .caption) private var cellHeight: CGFloat = 28
 
     var body: some View {
         switch layout {
@@ -175,7 +175,7 @@ private struct SlotCell: View {
 
     @ViewBuilder
     private var shape: some View {
-        let rectangle = RoundedRectangle(cornerRadius: 2, style: .continuous)
+        let rectangle = RoundedRectangle(cornerRadius: 5, style: .continuous)
 
         if differentiateWithoutColor {
             // Colour has been declined, so meaning goes back to ink density:
@@ -198,24 +198,16 @@ private struct SlotCell: View {
                     }
                     .overlay { rectangle.strokeBorder(tint, lineWidth: 2) }
             }
-        } else if layout == .labeled {
-            // A cell wide enough to write its hour inside can afford Apple
-            // Calendar's treatment: a muted wash of the hue with the text in the
-            // hue at full strength. The words carry the meaning, so the fill is
-            // free to recede.
+        } else {
+            // Apple Calendar's treatment, at every width: a muted wash of the
+            // hue rather than a saturated block. Applied uniformly so a row does
+            // not change character when the day shortens and the cells widen.
             //
             // Mixed opaquely into the surface rather than `.opacity()`. A
             // translucent hue takes its result from whatever is behind it and
             // loses chroma over a dark background, which comes out muddy; a
             // perceptual mix against the real surface does not.
             rectangle.fill(mutedFill)
-        } else {
-            // A bare block, with no room for a word. Here the fill is the only
-            // channel there is, so it stays at full strength — muting it would
-            // weaken the one signal that makes a row readable at a glance, and
-            // muted red and green converge exactly on the axis most colour
-            // vision deficiencies already struggle with.
-            rectangle.fill(tint)
         }
     }
 
@@ -226,10 +218,10 @@ private struct SlotCell: View {
     private var mutedFill: Color {
         let strength: Double =
             switch (colorScheme, contrast) {
-            case (.dark, .increased): 0.30
-            case (.dark, _): 0.22
-            case (_, .increased): 0.24
-            default: 0.16
+            case (.dark, .increased): 0.52
+            case (.dark, _): 0.38
+            case (_, .increased): 0.28
+            default: 0.20
             }
 
         return Color(uiColor: .systemBackground).mix(with: tint, by: strength, in: .perceptual)
@@ -296,7 +288,6 @@ private struct SlotCell: View {
 
         return layout == .labeled ? strongInk : .white
     }
-
     /// The hue, pushed far enough toward the text colour to stay legible on its
     /// own muted wash.
     ///
