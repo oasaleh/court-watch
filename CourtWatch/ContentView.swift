@@ -76,11 +76,34 @@ struct ContentView: View {
     private enum LoadState {
         case loading
         case loaded(Availability, fetchedAt: Date, window: RequestedWindow?)
-        case failed
+
+        /// Carries what went wrong, so the screen can ask the mapping what to
+        /// say rather than holding an opinion of its own.
+        ///
+        /// Inside the case rather than in a separate property, for the same
+        /// reason the fetch moment and the window live inside the loaded case:
+        /// a failure that cannot exist without a failed load cannot drift from
+        /// it.
+        case failed(APIError)
     }
 
     @State private var state: LoadState = .loading
     @State private var isChoosingFacilities = false
+
+    /// Whether a fetch is in flight.
+    ///
+    /// Exists to stop retries piling up. Five impatient taps used to start five
+    /// fetches, each of which may make two requests, against a WAF-fronted host
+    /// that belongs to the Township — SESS-06 forbids unattended traffic and
+    /// this screen is the one place in the app a single user can generate a
+    /// burst of it.
+    ///
+    /// **Checked structurally and by hand rather than by test:** the suite does
+    /// not exercise views, so nothing here is covered by it. The copy the
+    /// failure screen displays is fully covered by the presentation tests; that
+    /// this screen asks for it, and that this flag holds the door, are
+    /// checkpoint lines.
+    @State private var isFetching = false
 
     /// The active start-time filter.
     ///
@@ -124,33 +147,64 @@ struct ContentView: View {
         case .loading:
             ProgressView("Finding today's courts…")
 
-        case .failed:
-            failure
+        case .failed(let error):
+            failure(error)
 
         case .loaded(let availability, let fetchedAt, let window):
             loaded(availability, fetchedAt: fetchedAt, heldWindow: window)
         }
     }
 
-    /// One honest sentence and a way to try again.
+    /// The failure screen, in the words the mapping chose.
     ///
-    /// Deliberately not a taxonomy. Telling offline apart from a timeout from a
-    /// decode failure from a non-`0000` response code, and designing the
-    /// recovery for each, is a later phase's work, and anything richer built
-    /// here would be rewritten by it.
-    private var failure: some View {
-        ContentUnavailableView {
-            Label("Couldn't Load Today's Courts", systemImage: "wifi.exclamationmark")
+    /// This view holds no opinion about what any error means and branches on no
+    /// error case — the same rule the cells follow, and for the same reason:
+    /// two opinions can disagree, and the one that would be wrong here is the
+    /// one telling a user their connection is broken when it is not.
+    private func failure(_ error: APIError) -> some View {
+        let presentation = ErrorPresentation.of(error)
+
+        return ContentUnavailableView {
+            Label(presentation.title, systemImage: presentation.symbolName)
         } description: {
-            Text("Check your connection and try again.")
+            Text(presentation.message)
         } actions: {
-            Button("Try Again") {
-                Task {
-                    state = .loading
-                    await load()
-                }
+            retry(presentation.retry)
+        }
+    }
+
+    /// Try Again, always present, with its weight set by the odds.
+    ///
+    /// The button never disappears even where retrying is unlikely to help: a
+    /// truncated response can fail to decode transiently, the Township can
+    /// publish times late, and taking away the only control on the screen
+    /// leaves the user nothing to do but force-quit. What would be dishonest is
+    /// a message implying a retry will work when it will not — so the sentence
+    /// carries that, and the prominence carries it again.
+    @ViewBuilder
+    private func retry(_ strength: RetryStrength) -> some View {
+        let button = Button("Try Again") {
+            Task {
+                // Belt and braces beside `.disabled` below: the control is
+                // already inert while a fetch runs, and the loading state
+                // replaces it with a spinner, but setting `.loading` for a
+                // fetch that the guard in `load` then refuses would strand the
+                // screen on a spinner that never resolves.
+                guard isFetching == false else { return }
+
+                state = .loading
+                await load()
             }
-            .buttonStyle(.borderedProminent)
+        }
+        // Nothing may queue up behind an impatient user.
+        .disabled(isFetching)
+
+        switch strength {
+        case .worthTrying:
+            button.buttonStyle(.borderedProminent)
+
+        case .probablyPersistent:
+            button.buttonStyle(.bordered)
         }
     }
 
@@ -298,6 +352,19 @@ struct ContentView: View {
     /// The one path to the network, for the first load, every refresh, and the
     /// occasional filter change that genuinely needs one.
     private func load(window: RequestedWindow? = nil) async {
+        // One fetch at a time. Refused rather than queued: a second fetch
+        // started while the first is running would double the traffic for an
+        // answer the user is already waiting for.
+        //
+        // Released on *every* exit path, the failure path included. Leaving it
+        // set after a failed load would make the app unable to retry at all,
+        // converting a recoverable state into a dead end — a worse bug than the
+        // one this guard fixes.
+        guard isFetching == false else { return }
+
+        isFetching = true
+        defer { isFetching = false }
+
         do {
             let client = AvailabilityClient(session: CourtSession())
 
@@ -319,11 +386,13 @@ struct ContentView: View {
             // A refresh that fails keeps the last good data *and its original
             // timestamp* on screen. Replacing a working grid with an error is
             // the more common implementation and the wrong one: the user can
-            // still use what is there, and the unchanged time is what tells
-            // them it did not get newer.
+            // still use what is there.
             if case .loaded = state { return }
 
-            state = .failed
+            // Anything that is not one of the client's own failures is treated
+            // as the far end not answering: true of every case that can reach
+            // here, retryable, and blaming nothing the user controls.
+            state = .failed(error as? APIError ?? .transport(.unknown))
         }
     }
 }
