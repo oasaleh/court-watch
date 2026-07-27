@@ -33,6 +33,18 @@ nonisolated struct SlotTime: Hashable, Sendable, Comparable {
         self.minute = minute
     }
 
+    /// Builds a slot time from components already known to be valid.
+    ///
+    /// Kept internal and undocumented in the API sense: the parsing initializer
+    /// above is how times enter the app from the wire. This exists so derived
+    /// times — an ending boundary, a test fixture — can be named without a
+    /// round trip through a formatter, which the discipline guard forbids
+    /// anywhere but `CourtTime` in any case.
+    init(hour: Int, minute: Int) {
+        self.hour = hour
+        self.minute = minute
+    }
+
     /// Places this time of day onto a specific Central day.
     func date(on day: Date) -> Date {
         var parts = CourtTime.calendar.dateComponents([.year, .month, .day], from: day)
@@ -85,6 +97,25 @@ nonisolated struct SlotTime: Hashable, Sendable, Comparable {
     /// second code path to get wrong.
     func isElapsed(now: Date, slotMinutes: Int) -> Bool {
         date(on: now).addingTimeInterval(TimeInterval(slotMinutes) * 60) <= now
+    }
+
+    /// The moment this slot ends, as a slot time.
+    ///
+    /// Used to name the exclusive upper bound of a request. The endpoint's
+    /// `end_time` was measured to be **exclusive**: asking for 12:00 to 22:00
+    /// returns 12:00 through 21:00 and silently omits the 22:00 slot. Asking to
+    /// the *end* of the last wanted slot is what makes that slot come back.
+    ///
+    /// Clamped to 23:59 rather than wrapping. A slot ending at midnight would
+    /// otherwise name an hour of 24, and a wrapped 00:00 would be read by the
+    /// server as a bound before its own start — the request would come back
+    /// empty, which is the failure this function exists to prevent.
+    func endingBoundary(slotMinutes: Int) -> SlotTime {
+        let total = hour * 60 + minute + slotMinutes
+
+        guard total < 24 * 60 else { return SlotTime(hour: 23, minute: 59) }
+
+        return SlotTime(hour: total / 60, minute: total % 60)
     }
 
     static func < (lhs: Self, rhs: Self) -> Bool {

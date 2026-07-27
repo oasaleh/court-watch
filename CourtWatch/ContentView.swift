@@ -167,7 +167,11 @@ struct ContentView: View {
         // The active window travels with it. A refresh is a round trip that is
         // being paid for anyway, which is the one moment server-side trimming is
         // a real saving rather than an extra request.
-        .refreshable { await load(window: filter.window(over: availability.slotTimes)) }
+        .refreshable {
+            await load(
+                window: filter.window(
+                    over: availability.slotTimes, slotMinutes: availability.slotMinutes))
+        }
         // Pinned to the bottom edge rather than placed in the list, so it stays
         // visible however far the user has scrolled. UI-07 is about not having
         // to hunt for it.
@@ -188,7 +192,7 @@ struct ContentView: View {
             // how busy the courts are.
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    ForEach(StartTimeFilter.choices) { choice in
+                    ForEach(StartTimeFilter.choices(for: availability.slotTimes)) { choice in
                         Button {
                             apply(choice, over: availability, heldWindow: heldWindow)
                         } label: {
@@ -249,7 +253,8 @@ struct ContentView: View {
     ) {
         filter = choice
 
-        let requested = choice.window(over: availability.slotTimes)
+        let requested = choice.window(
+            over: availability.slotTimes, slotMinutes: availability.slotMinutes)
         guard StartTimeFilter.covers(held: heldWindow, requested: requested) == false else {
             return
         }

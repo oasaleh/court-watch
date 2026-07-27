@@ -47,21 +47,19 @@ nonisolated struct StartTimeFilter: Hashable, Sendable, Identifiable {
     /// Show everything still to come.
     static let anyTime = StartTimeFilter(start: nil)
 
-    /// A short list of round hours rather than a free time picker.
+    /// A start time for each slot the day actually publishes.
     ///
-    /// The app shows one day of hourly slots, so a picker able to express
-    /// 5:47 PM would offer precision the data cannot use — and every value it
-    /// could express that is not on the hour would behave identically to the
-    /// hour before it.
-    static let choices: [StartTimeFilter] = {
-        let hours = ["09:00:00", "12:00:00", "15:00:00", "18:00:00", "20:00:00"]
-
-        // Spelled as a closure, never `map(StartTimeFilter.init)`: an unapplied
-        // reference to a main-actor-isolated initializer does not convert.
-        return [anyTime] + hours.compactMap { apiString in
-            SlotTime(apiString: apiString).map { hour in StartTimeFilter(start: hour) }
-        }
-    }()
+    /// Derived from the fetched day rather than hardcoded. A fixed list gets the
+    /// first hour wrong the moment the Township changes its opening time, and a
+    /// list that starts later than the first slot silently makes the earliest
+    /// courts unreachable — which is exactly what a hardcoded 9 AM did on a day
+    /// whose first slot is 7 AM.
+    ///
+    /// Spelled as a closure, never `map(StartTimeFilter.init)`: an unapplied
+    /// reference to a main-actor-isolated initializer does not convert.
+    static func choices(for slots: [SlotTime]) -> [StartTimeFilter] {
+        [anyTime] + slots.map { hour in StartTimeFilter(start: hour) }
+    }
 
     /// What the control says, and what a screen reader announces.
     ///
@@ -79,15 +77,22 @@ nonisolated struct StartTimeFilter: Hashable, Sendable, Identifiable {
     /// Nothing when no filter is set: that is a request for the whole day, which
     /// is exactly what an unwindowed fetch already is.
     ///
-    /// The end is the day's own last slot, so a windowed request asks for
-    /// "this hour onwards" rather than for a fixed span the server would have to
-    /// guess at. `max` guards the degenerate case where a filter sits past the
-    /// last slot — an end before its own start is not a window, and would be a
-    /// strange thing to put on the wire.
-    func window(over slots: [SlotTime]) -> RequestedWindow? {
+    /// The end is the moment the day's **last slot ends**, not the moment it
+    /// begins. `end_time` was measured to be exclusive — asking 12:00 to 22:00
+    /// returns 12:00 through 21:00 and drops the 22:00 slot entirely. Naming the
+    /// start of the last slot as the bound therefore loses that slot on every
+    /// windowed refresh, and because the next window is computed from the
+    /// shortened list it loses another, and another, until the day is empty and
+    /// the app reports that today is over while courts are still free.
+    ///
+    /// `max` guards the degenerate case where a filter sits past the last slot —
+    /// an end before its own start is not a window.
+    func window(over slots: [SlotTime], slotMinutes: Int) -> RequestedWindow? {
         guard let start, let last = slots.last else { return nil }
 
-        return RequestedWindow(start: start, end: Swift.max(start, last))
+        let bound = last.endingBoundary(slotMinutes: slotMinutes)
+
+        return RequestedWindow(start: start, end: Swift.max(start, bound))
     }
 
     /// Whether data fetched under one window answers a request for another.

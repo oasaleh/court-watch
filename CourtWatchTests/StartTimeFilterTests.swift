@@ -153,25 +153,26 @@ struct StartTimeFilterTests {
 
     // MARK: - The window a filter asks for
 
-    @Test("The window carries the filter's start and the day's last slot")
+    @Test("The window carries the filter's start and the end of the day's last slot")
     func buildsWindowFromFilterAndDay() throws {
         let slots = try publishedSlots.map { try slot($0) }
-        let requested = try #require(try filter("18:00:00").window(over: slots))
+        let requested = try #require(try filter("18:00:00").window(over: slots, slotMinutes: 60))
 
         #expect(requested.start == (try slot("18:00:00")))
-        #expect(requested.end == (try slot("22:00:00")))
+        // The end of the 22:00 slot, not its start: end_time is exclusive.
+        #expect(requested.end == SlotTime(hour: 23, minute: 0))
     }
 
     @Test("No filter asks for no window")
     func buildsNoWindowWithoutAFilter() throws {
         let slots = try publishedSlots.map { try slot($0) }
 
-        #expect(StartTimeFilter.anyTime.window(over: slots) == nil)
+        #expect(StartTimeFilter.anyTime.window(over: slots, slotMinutes: 60) == nil)
     }
 
     @Test("A filter over an empty day asks for no window")
     func buildsNoWindowOverAnEmptyDay() throws {
-        #expect(try filter("18:00:00").window(over: []) == nil)
+        #expect(try filter("18:00:00").window(over: [], slotMinutes: 60) == nil)
     }
 
     /// The degenerate case: a filter sitting past the last slot. An end before
@@ -180,7 +181,7 @@ struct StartTimeFilterTests {
     @Test("A window never ends before it starts")
     func neverBuildsAnInvertedWindow() throws {
         let slots = [try slot("07:00:00"), try slot("08:00:00")]
-        let requested = try #require(try filter("18:00:00").window(over: slots))
+        let requested = try #require(try filter("18:00:00").window(over: slots, slotMinutes: 60))
 
         #expect(requested.start <= requested.end)
         #expect(requested.end == (try slot("18:00:00")))
@@ -229,9 +230,9 @@ struct StartTimeFilterTests {
     func narrowingIsAlwaysFree() throws {
         let slots = try publishedSlots.map { try slot($0) }
 
-        for choice in StartTimeFilter.choices {
+        for choice in StartTimeFilter.choices(for: slots) {
             #expect(
-                StartTimeFilter.covers(held: nil, requested: choice.window(over: slots)),
+                StartTimeFilter.covers(held: nil, requested: choice.window(over: slots, slotMinutes: 60)),
                 "\(choice.label) from an unwindowed fetch")
         }
     }
@@ -244,7 +245,7 @@ struct StartTimeFilterTests {
     @Test("A windowed request encodes both time keys and the range flag")
     func encodesWindowedRequestBody() throws {
         let slots = try publishedSlots.map { try slot($0) }
-        let requested = try #require(try filter("18:00:00").window(over: slots))
+        let requested = try #require(try filter("18:00:00").window(over: slots, slotMinutes: 60))
 
         let body = AvailabilityClient.makeBody(
             day: try central(hour: 12),
@@ -255,7 +256,7 @@ struct StartTimeFilterTests {
                 as? [String: Any])
 
         #expect(json["start_time"] as? String == "18:00:00")
-        #expect(json["end_time"] as? String == "22:00:00")
+        #expect(json["end_time"] as? String == "23:00:00")
         #expect(json["change_time_range"] as? Bool == true)
         #expect(json["reserve_date"] as? String == "2026-07-26")
     }
@@ -281,18 +282,74 @@ struct StartTimeFilterTests {
     // MARK: - The choices
 
     @Test("The choices begin with no filter and are otherwise in ascending order")
-    func offersOrderedChoices() {
-        #expect(StartTimeFilter.choices.first == StartTimeFilter.anyTime)
-        #expect(StartTimeFilter.choices.count > 1)
+    func offersOrderedChoices() throws {
+        let choices = StartTimeFilter.choices(for: try publishedSlots.map { try slot($0) })
 
-        let hours = StartTimeFilter.choices.compactMap(\.start)
+        #expect(choices.first == StartTimeFilter.anyTime)
+        #expect(choices.count > 1)
+
+        let hours = choices.compactMap(\.start)
         #expect(hours == hours.sorted())
-        #expect(hours.count == StartTimeFilter.choices.count - 1)
+        #expect(hours.count == choices.count - 1)
     }
 
     @Test("Every choice is distinct")
-    func offersDistinctChoices() {
-        #expect(Set(StartTimeFilter.choices).count == StartTimeFilter.choices.count)
-        #expect(Set(StartTimeFilter.choices.map(\.id)).count == StartTimeFilter.choices.count)
+    func offersDistinctChoices() throws {
+        let choices = StartTimeFilter.choices(for: try publishedSlots.map { try slot($0) })
+
+        #expect(Set(choices).count == choices.count)
+        #expect(Set(choices.map(\.id)).count == choices.count)
+    }
+
+    /// The first slot of the day must be reachable.
+    ///
+    /// A hardcoded list beginning at 9 AM made the 7 and 8 o'clock courts
+    /// unselectable on a day whose first slot is 7 AM — the user could see them
+    /// but never filter to them. Deriving the list from the day removes the
+    /// class of bug rather than correcting one instance of it.
+    @Test("Every published slot is offered as a start time")
+    func offersEveryPublishedSlot() throws {
+        let slots = try publishedSlots.map { try slot($0) }
+        let offered = StartTimeFilter.choices(for: slots).compactMap(\.start)
+
+        #expect(offered == slots)
+        #expect(offered.first == (try slot("07:00:00")))
+        #expect(offered.last == (try slot("22:00:00")))
+    }
+
+    /// The bug this window arithmetic exists to prevent.
+    ///
+    /// `end_time` is exclusive: a request naming the last slot's *start* comes
+    /// back without that slot. Because the next window is computed from the
+    /// shortened list, the day then erodes an hour per refresh until it is empty
+    /// and the app claims today is over while courts are still free.
+    @Test("A windowed refresh does not shorten the day it asks for")
+    func windowSurvivesRepeatedRefreshes() throws {
+        var slots = try publishedSlots.map { try slot($0) }
+        let chosen = try filter("18:00:00")
+
+        for _ in 0..<3 {
+            let requested = try #require(chosen.window(over: slots, slotMinutes: 60))
+
+            // What the server returns for that window: every slot from the
+            // start up to, but not including, the exclusive end.
+            slots = slots.filter { $0 >= requested.start && $0 < requested.end }
+
+            #expect(slots.last == (try slot("22:00:00")), "the last slot must survive")
+        }
+    }
+
+    @Test("The ending boundary is the end of the slot, not its start")
+    func endingBoundaryIsExclusiveUpperBound() throws {
+        #expect(try slot("22:00:00").endingBoundary(slotMinutes: 60) == SlotTime(hour: 23, minute: 0))
+        #expect(try slot("07:00:00").endingBoundary(slotMinutes: 30) == SlotTime(hour: 7, minute: 30))
+    }
+
+    /// A slot ending at midnight must not name hour 24, and must not wrap to
+    /// 00:00 — a bound before its own start would come back empty.
+    @Test("The ending boundary never rolls past the end of the day")
+    func endingBoundaryClampsAtMidnight() throws {
+        #expect(try slot("23:00:00").endingBoundary(slotMinutes: 60) == SlotTime(hour: 23, minute: 59))
+        #expect(try slot("22:00:00").endingBoundary(slotMinutes: 180) == SlotTime(hour: 23, minute: 59))
     }
 }
