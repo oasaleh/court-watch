@@ -90,6 +90,40 @@
             /// One good response, then nothing — a failed refresh over data
             /// that is still on screen.
             case stale
+
+            // MARK: Sign-in
+            //
+            // Every one of these answers from a payload built by hand. **This
+            // is the only place a credential failure may ever be rehearsed**:
+            // one wrong attempt against the real service arms an extra
+            // verification step on the user's actual booking account, which
+            // this app cannot undo. A fabricated reply tells you everything
+            // about how the app behaves and costs nothing, which makes the live
+            // version not merely dangerous but pointless.
+
+            /// The credentials are refused — driven by the **real captured
+            /// failure body**, which is the one true example anyone has and
+            /// which carries the trap: `response_code` `0000` on a rejection.
+            case signInRefused
+
+            /// The service demands a verification challenge the app cannot
+            /// present.
+            case signInCaptcha
+
+            /// A sign-in that works, confirms, and yields an id.
+            case signedIn
+
+            /// A sign-in that works and hands back nothing usable.
+            case signInNoIdentity
+
+            /// A sign-in whose body reports success and whose session check
+            /// disagrees. The app must end up **anonymous**, which is the one
+            /// case where it deliberately disbelieves a success.
+            case signInUnconfirmed
+
+            /// A signed-in fetch the server refuses, driving the real anonymous
+            /// replay rather than posing its result.
+            case signedInRefused
         }
 
         /// Unset, empty, or unrecognised means no simulation.
@@ -186,6 +220,28 @@
                         ? .success(Data(handshakePage.utf8))
                         : .failure(APIError.transport(.notConnectedToInternet))
                 }
+
+            case .signInRefused:
+                return routing(signIn: capturedRejection)
+
+            case .signInCaptcha:
+                return routing(signIn: captchaDemand)
+
+            case .signedIn:
+                return routing(signIn: inventedSuccess, check: signedInCheck)
+
+            case .signInNoIdentity:
+                return routing(signIn: inventedSuccessWithoutIdentity, check: signedInCheck)
+
+            case .signInUnconfirmed:
+                // The body says it worked. The check — the only part of this
+                // whose answers were actually measured — says the jar is
+                // anonymous. The app must believe the check.
+                return routing(signIn: inventedSuccess, check: anonymousCheck)
+
+            case .signedInRefused:
+                return routing(
+                    signIn: inventedSuccess, check: signedInCheck, refusingRealCustomerID: true)
             }
         }
 
@@ -201,6 +257,56 @@
             SimulatedTransport { request, _ in
                 request.httpMethod == "POST" ? answer : .success(Data(handshakePage.utf8))
             }
+        }
+
+        /// Answers the sign-in POST, the session check and the availability
+        /// POST **separately**.
+        ///
+        /// They are three different URLs, and a scenario that answered them
+        /// alike would make a signed-in grid impossible to look at — the thing
+        /// the person running the checkpoint is there to judge.
+        private static func routing(
+            signIn: String,
+            check: String = anonymousCheck,
+            refusingRealCustomerID: Bool = false
+        ) -> SimulatedTransport {
+            SimulatedTransport { request, _ in
+                let url = request.url?.absoluteString ?? ""
+
+                if url.contains("logincheck") {
+                    return .success(Data(check.utf8))
+                }
+
+                if url.contains("signin") {
+                    return .success(Data(signIn.utf8))
+                }
+
+                guard request.httpMethod == "POST" else {
+                    return .success(Data(handshakePage.utf8))
+                }
+
+                // Judged on what the request actually carries rather than on a
+                // count, so it drives the real fallback whatever order the
+                // person at the checkpoint does things in: sign in first,
+                // browse first, refresh in between.
+                if refusingRealCustomerID && carriesRealCustomerID(request) {
+                    return .success(
+                        Data(envelope(code: "1507", message: "Invalid request").utf8))
+                }
+
+                return .success(Data(goodPayload.utf8))
+            }
+        }
+
+        /// Whether an availability POST is claiming to be somebody.
+        private static func carriesRealCustomerID(_ request: URLRequest) -> Bool {
+            guard
+                let body = request.httpBody,
+                let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                let identifier = object["customer_id"] as? Int
+            else { return false }
+
+            return identifier != 0
         }
     }
 
@@ -224,6 +330,10 @@
 
         var requestCount: Int { lock.withLock { recorded.count } }
         var postCount: Int { lock.withLock { recorded.filter { $0.httpMethod == "POST" }.count } }
+
+        /// Everything it was asked, so a test can check what actually went out
+        /// rather than inferring it from a total.
+        var recordedRequests: [URLRequest] { lock.withLock { recorded } }
 
         func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
             let result: Result<Data, any Error> = lock.withLock {
@@ -402,6 +512,84 @@
                     resource(
                         id: "null", name: "\"Cranebrook Tennis 1\"", details: ordinaryStatuses)
                 ])
+
+        // MARK: Sign-in payloads
+        //
+        // **No real credential appears anywhere here, or anywhere in this
+        // repository.** The two session-check envelopes are captured; the
+        // rejection is captured; everything else is invented and says so.
+
+        /// The **real captured rejection**, kept verbatim.
+        ///
+        /// Note `response_code: "0000"` — *Successful* — beside
+        /// `success: false`. That is the trap this whole path exists around,
+        /// and keeping the body unedited is what makes the rehearsal worth
+        /// anything.
+        ///
+        /// Note also `need_verify_recaptcha: true`: the captured rejection
+        /// **already carries the captcha flag**, which is why a refusal and a
+        /// challenge cannot be told apart by that flag alone.
+        static let capturedRejection = """
+            {"headers":{"sessionRefreshedOn":null,"sessionExtendedCount":0,
+            "response_code":"0000","response_message":"Successful"},
+            "body":{"result":{"success":false,"message":"Invalid login name or password",
+            "error_type":0,"redirect_url":null,"security_sign_token":null,
+            "public_customer_id":null,"sign_in_token_id":null,"customer":null,
+            "access_token":null,"refresh_token":null,"ak_update_succeed":false,
+            "enable_gpap":false,"need_verify_recaptcha":true}}}
+            """
+
+        /// A challenge with no reason named.
+        ///
+        /// Derived from the captured rejection by clearing the message rather
+        /// than by setting the flag, because the flag is already set there. A
+        /// pure challenge is a refusal that demands verification while saying
+        /// nothing about the credentials; a refusal that names a reason is a
+        /// refusal. That ordering is the app's rule, and this payload is the
+        /// shape it distinguishes.
+        fileprivate static let captchaDemand = """
+            {"headers":{"sessionRefreshedOn":null,"response_code":"0000",
+            "response_message":"Successful"},
+            "body":{"result":{"success":false,"message":null,
+            "need_verify_recaptcha":true}}}
+            """
+
+        /// **Invented.** No success response has ever been captured, so this
+        /// follows the field names the captured failure revealed and adds
+        /// nothing beyond them. The id is obviously fake.
+        fileprivate static let inventedSuccess = """
+            {"headers":{"sessionRefreshedOn":"2026-07-27 10:13:17","response_code":"0000",
+            "response_message":"Successful"},
+            "body":{"result":{"success":true,"message":null,"error_type":0,
+            "public_customer_id":4471056,"sign_in_token_id":"simulated-token-id",
+            "security_sign_token":"simulated-security-token",
+            "access_token":"simulated-access-token","refresh_token":"simulated-refresh-token",
+            "customer":null,"ak_update_succeed":true,"enable_gpap":false,
+            "need_verify_recaptcha":false}}}
+            """
+
+        /// **Invented**, the same shape with nothing usable to identify anyone.
+        fileprivate static let inventedSuccessWithoutIdentity = """
+            {"headers":{"sessionRefreshedOn":"2026-07-27 10:13:17","response_code":"0000",
+            "response_message":"Successful"},
+            "body":{"result":{"success":true,"message":null,"public_customer_id":null,
+            "customer":null,"access_token":"simulated-access-token",
+            "need_verify_recaptcha":false}}}
+            """
+
+        /// The **captured** signed-in answer from the session check.
+        fileprivate static let signedInCheck = """
+            {"headers":{"sessionRefreshedOn":"2026-07-27 10:13:17","sessionExtendedCount":1,
+            "response_code":"0000","response_message":"Successful"},
+            "body":{"result":"successful"}}
+            """
+
+        /// The **captured** anonymous answer. `0021` here is the ordinary
+        /// reply, not an expiry.
+        fileprivate static let anonymousCheck = """
+            {"headers":{"sessionRefreshedOn":null,"sessionExtendedCount":0,
+            "response_code":"0021","response_message":"User not login"},"body":{}}
+            """
 
         /// The residency notice on every court, plus one the app has not
         /// accounted for — so the strip shows exactly one line.

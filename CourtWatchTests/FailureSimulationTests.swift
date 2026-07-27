@@ -55,6 +55,26 @@ nonisolated enum FailureSimulationCases {
 
     /// Values a person might type that are not scenarios.
     static let notScenarios = ["", "  ", "nonsense", "Offline", "OFFLINE", "time-out", "0", "true"]
+
+    /// Obviously fake, and never used against anything real.
+    static let fakeCredentials = Credentials(
+        username: "simulated@example.invalid", password: "not-a-real-credential")
+
+    /// The six sign-in scenarios.
+    static let signInScenarios: [FailureSimulation.Scenario] = [
+        .signInRefused, .signInCaptcha, .signedIn, .signInNoIdentity, .signInUnconfirmed,
+        .signedInRefused,
+    ]
+
+    /// Each against the outcome its label promises.
+    static let signInOutcomes: [(FailureSimulation.Scenario, SignInOutcome)] = [
+        (.signInRefused, .rejected),
+        (.signInCaptcha, .captchaRequired),
+        (.signedIn, .signedIn(customerID: 4_471_056)),
+        (.signInNoIdentity, .succeededWithoutIdentity),
+        (.signInUnconfirmed, .succeededWithoutIdentity),
+        (.signedInRefused, .signedIn(customerID: 4_471_056)),
+    ]
 }
 
 struct FailureSimulationTests {
@@ -91,7 +111,184 @@ struct FailureSimulationTests {
             Set(FailureSimulation.Scenario.allCases.map(\.rawValue)) == [
                 "offline", "timeout", "blocked", "garbled", "refused",
                 "expired", "empty", "degraded", "warning", "stale",
+                "signInRefused", "signInCaptcha", "signedIn", "signInNoIdentity",
+                "signInUnconfirmed", "signedInRefused",
             ])
+    }
+
+    // MARK: - The sign-in scenarios
+
+    /// **This is what makes the sign-in half of the checkpoint worth
+    /// anything.** Without it, an approval could rest on a harness quietly
+    /// producing something other than the state on the label — a screen
+    /// approved as "the refusal warning" while the transport was actually
+    /// sending a challenge — and the whole exercise would prove nothing.
+    ///
+    /// Each scenario is driven through the **real** `SignInClient`, its real
+    /// two-layer decode, and its real confirmation step.
+    @Test(
+        "Each sign-in scenario produces the outcome it claims",
+        arguments: FailureSimulationCases.signInOutcomes
+    )
+    func signInScenarioProducesItsOutcome(
+        scenario: FailureSimulation.Scenario, expected: SignInOutcome
+    ) async throws {
+        let transport = FailureSimulation.makeTransport(for: scenario)
+        let session = CourtSession { transport }
+        let client = SignInClient(session: session)
+
+        let outcome = try await client.signIn(as: FailureSimulationCases.fakeCredentials)
+
+        #expect(outcome == expected, "\(scenario.rawValue) produced \(outcome)")
+    }
+
+    /// The refusal is driven by the **real captured body**, whose envelope says
+    /// `0000 Successful`. A client that stopped at the envelope would report a
+    /// successful sign-in here — which is the failure this scenario exists to
+    /// let a person see with their own eyes.
+    @Test("The refusal scenario carries the captured 0000 envelope")
+    func refusalCarriesTheCapturedEnvelope() async throws {
+        let session = CourtSession { FailureSimulation.makeTransport(for: .signInRefused) }
+
+        let outcome = try await SignInClient(session: session).signIn(
+            as: FailureSimulationCases.fakeCredentials)
+
+        #expect(outcome == .rejected)
+
+        // And the payload it was driven by really does claim success at the
+        // outer layer — so this scenario reproduces the trap rather than
+        // merely reproducing the sentence.
+        let body = try #require(
+            try JSONSerialization.jsonObject(
+                with: Data(FailureSimulation.capturedRejection.utf8)) as? [String: Any])
+        let headers = try #require(body["headers"] as? [String: Any])
+        let result = try #require((body["body"] as? [String: Any])?["result"] as? [String: Any])
+
+        #expect(headers["response_code"] as? String == "0000")
+        #expect(headers["response_message"] as? String == "Successful")
+        #expect(result["success"] as? Bool == false)
+
+        // The captured rejection already carries the challenge flag, which is
+        // why a refusal cannot be told from a challenge by that flag alone.
+        #expect(result["need_verify_recaptcha"] as? Bool == true)
+    }
+
+    /// **The one a reader is most likely to assume is impossible.** The body
+    /// reports success; the session check answers the anonymous code; the app
+    /// must end up anonymous. Driven end to end rather than posed.
+    @Test("The unconfirmed scenario ends anonymous despite a success body")
+    func unconfirmedScenarioEndsAnonymous() async throws {
+        let transport = FailureSimulation.makeTransport(for: .signInUnconfirmed)
+        let session = CourtSession { transport }
+
+        let outcome = try await SignInClient(session: session).signIn(
+            as: FailureSimulationCases.fakeCredentials)
+
+        #expect(outcome == .succeededWithoutIdentity)
+        #expect(outcome != .signedIn(customerID: 4_471_056))
+
+        // The check was actually consulted — that is the whole mechanism.
+        #expect(
+            transport.recordedRequests.contains {
+                ($0.url?.absoluteString ?? "").contains("logincheck")
+            })
+    }
+
+    /// The confirmed one is its control: same body, a check that agrees, and an
+    /// identity comes out.
+    @Test("The signed-in scenario confirms and yields an identity")
+    func signedInScenarioYieldsIdentity() async throws {
+        let session = CourtSession { FailureSimulation.makeTransport(for: .signedIn) }
+
+        #expect(
+            try await SignInClient(session: session).signIn(
+                as: FailureSimulationCases.fakeCredentials) == .signedIn(customerID: 4_471_056))
+    }
+
+    /// Signing in must still leave a grid to look at, or the scenario cannot be
+    /// judged at all.
+    @Test(
+        "Every sign-in scenario still serves a grid",
+        arguments: FailureSimulationCases.signInScenarios
+    )
+    func signInScenariosStillServeAGrid(scenario: FailureSimulation.Scenario) async throws {
+        let session = CourtSession { FailureSimulation.makeTransport(for: scenario) }
+        let availability = try await AvailabilityClient(session: session).fetch(on: try testDay())
+
+        #expect(availability.courts.count == 7)
+        #expect(availability.slotTimes.count == 16)
+    }
+
+    // MARK: - The fallback, driven for real
+
+    /// **Signing in cannot cost the user the grid.**
+    ///
+    /// The server refuses the real customer id, and the app replays anonymously
+    /// and shows the courts. This drives the client's real fallback rather than
+    /// posing its result — which is the only way the guarantee is ever *seen*
+    /// rather than asserted.
+    @Test("The refused-customer-id scenario falls back and still returns a grid")
+    func signedInRefusedDrivesTheRealFallback() async throws {
+        let transport = FailureSimulation.makeTransport(for: .signedInRefused)
+        let session = CourtSession { transport }
+
+        let outcome = try await AvailabilityClient(session: session).fetch(
+            on: try testDay(), as: .signedIn(customerID: 4_471_056))
+
+        #expect(outcome.availability.courts.count == 7)
+        #expect(outcome.downgradedToAnonymous)
+
+        // Two POSTs: the refused one and the anonymous replay.
+        #expect(transport.postCount == 2)
+    }
+
+    /// And its control: the same scenario, fetched anonymously, is not refused
+    /// at all — so the harness is discriminating on the identity rather than
+    /// simply failing the first POST.
+    @Test("The refused-customer-id scenario does not refuse an anonymous fetch")
+    func signedInRefusedLeavesAnonymousAlone() async throws {
+        let transport = FailureSimulation.makeTransport(for: .signedInRefused)
+        let session = CourtSession { transport }
+
+        let availability = try await AvailabilityClient(session: session).fetch(on: try testDay())
+
+        #expect(availability.courts.count == 7)
+        #expect(transport.postCount == 1, "an anonymous fetch was replayed")
+    }
+
+    // MARK: - Nothing real anywhere near this
+
+    /// The harness never supplies or substitutes a credential of its own: the
+    /// only one in flight is the obviously-fake one the caller passed in.
+    ///
+    /// That no real-looking account exists anywhere in the tree is a stronger
+    /// claim and is checked repo-wide by the phase gate, not duplicated here —
+    /// a weaker copy of it inside this file would have to *name* the domains it
+    /// forbids, which is exactly what that gate exists to catch.
+    @Test(
+        "No sign-in scenario supplies a credential of its own",
+        arguments: FailureSimulationCases.signInScenarios
+    )
+    func signInScenariosSupplyNoCredential(scenario: FailureSimulation.Scenario) async throws {
+        let transport = FailureSimulation.makeTransport(for: scenario)
+        let session = CourtSession { transport }
+
+        _ = try? await SignInClient(session: session).signIn(
+            as: FailureSimulationCases.fakeCredentials)
+
+        let posts = transport.recordedRequests.filter {
+            ($0.url?.absoluteString ?? "").contains("signin")
+        }
+
+        #expect(posts.count == 1)
+
+        let payload = try #require(posts.first?.httpBody)
+        let body = try #require(
+            try JSONSerialization.jsonObject(with: payload) as? [String: Any])
+
+        // Exactly what was handed in, unchanged and unsupplemented.
+        #expect(body["login_name"] as? String == FailureSimulationCases.fakeCredentials.username)
+        #expect(body["password"] as? String == FailureSimulationCases.fakeCredentials.password)
     }
 
     // MARK: - Each scenario produces exactly what it claims
