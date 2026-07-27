@@ -222,8 +222,11 @@ struct ContentView: View {
                             }
                         }
                         .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { isShowingAccount = false }
+                            // A close control, not Done. Nothing here is
+                            // committed by dismissing — sign-in has its own
+                            // button — and Done means "complete or save".
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button(role: .close) { isShowingAccount = false }
                             }
                         }
                     }

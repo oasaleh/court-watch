@@ -74,7 +74,7 @@ nonisolated enum AccountStateText {
 
     static let signedIn = "Signed in to your Township account"
 
-    static let anonymous = "You're not signed in. All the courts and times are here either way."
+    static let anonymous = "You're not signed in."
 
     /// Shown after a signed-in request was refused and served anonymously. The
     /// alternative — dropping to anonymous while still displaying "signed in" —

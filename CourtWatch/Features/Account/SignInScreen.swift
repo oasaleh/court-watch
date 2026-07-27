@@ -52,6 +52,23 @@ struct SignInScreen: View {
     /// credential for longer than the one call that needed it.
     @State private var submissionClosed = false
 
+    /// Which control started the request in flight.
+    ///
+    /// Without it both buttons read `isWorking` and the spinner appears on
+    /// whichever one happens to draw it, rather than the one that was tapped.
+    private enum AttemptSource { case typed, stored }
+
+    @State private var attemptSource: AttemptSource = .typed
+
+    /// Keyboard focus, so Return moves from the email to the password and then
+    /// submits rather than dead-ending.
+    private enum Field: Hashable { case email, password }
+
+    @FocusState private var focusedField: Field?
+
+    /// Where VoiceOver is sent when a failure appears below the buttons.
+    @AccessibilityFocusState private var failureFocused: Bool
+
     private var canSubmit: Bool {
         account.isWorking == false
             && submissionClosed == false
@@ -84,9 +101,21 @@ struct SignInScreen: View {
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .focused($focusedField, equals: .email)
+                    .submitLabel(.next)
+                    .onSubmit { focusedField = .password }
+                    .disabled(account.isWorking)
 
                 SecureField("Password", text: $password)
                     .textContentType(.password)
+                    .focused($focusedField, equals: .password)
+                    .submitLabel(.go)
+                    .onSubmit {
+                        guard canSubmit else { return }
+                        focusedField = nil
+                        Task { await submit() }
+                    }
+                    .disabled(account.isWorking)
                     .onChange(of: password) {
                         // The keystroke that reopens submission. This is the
                         // whole of "a second attempt cannot happen by tapping".
@@ -95,14 +124,21 @@ struct SignInScreen: View {
             } header: {
                 Text("Township Account")
             } footer: {
-                Text("Signing in changes nothing on the courts screen — it's saved for later.")
+                // Says what is kept and where. "Saved for later" named no
+                // subject, and what is saved is a password — the one thing a
+                // user is entitled to be told about before they type it.
+                Text(
+                    "Court availability is the same signed in or out. "
+                        + "After a successful sign-in your email and password are kept "
+                        + "in this device's Keychain."
+                )
             }
 
             Section {
                 Button {
                     Task { await submit() }
                 } label: {
-                    if account.isWorking {
+                    if account.isWorking && attemptSource == .typed {
                         HStack(spacing: 8) {
                             ProgressView()
                             Text("Signing In…")
@@ -118,14 +154,29 @@ struct SignInScreen: View {
                 .disabled(canSubmit == false)
 
                 if account.hasStoredCredential {
-                    Button("Use Saved Sign-In") {
+                    Button {
+                        attemptSource = .stored
                         Task { await account.restoreStoredCredential() }
+                    } label: {
+                        // Progress belongs on the control that was tapped.
+                        // Showing it on the other one told the user the wrong
+                        // thing about which request was running.
+                        if account.isWorking && attemptSource == .stored {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Signing In…")
+                            }
+                        } else {
+                            Text("Use Saved Sign-In")
+                        }
                     }
                     .disabled(account.isWorking)
                 }
             } footer: {
                 if account.hasStoredCredential {
-                    Text("You'll be asked for Face ID or your passcode first.")
+                    // Not "Face ID or your passcode": the device may use Touch
+                    // ID, and naming a method it does not have is simply wrong.
+                    Text("You'll be asked to verify it's you first.")
                 }
             }
 
@@ -138,6 +189,10 @@ struct SignInScreen: View {
                 Section {
                     Label(presentation.title, systemImage: presentation.symbolName)
                         .font(.headline)
+                        // An error that appears silently is invisible to
+                        // VoiceOver, which is still sitting on whatever it was
+                        // reading before. Moving focus here is how it is told.
+                        .accessibilityFocused($failureFocused)
 
                     Text(presentation.message)
                         .font(.subheadline)
@@ -150,6 +205,9 @@ struct SignInScreen: View {
     }
 
     private func submit() async {
+        attemptSource = .typed
+        focusedField = nil
+
         await account.signIn(as: Credentials(username: username, password: password))
 
         // Anything that went wrong closes the door until a keystroke reopens
@@ -157,5 +215,9 @@ struct SignInScreen: View {
         // cannot see the cause of is no reason to let them hammer the service
         // either.
         submissionClosed = account.lastFailure != nil
+
+        if account.lastFailure != nil {
+            failureFocused = true
+        }
     }
 }
