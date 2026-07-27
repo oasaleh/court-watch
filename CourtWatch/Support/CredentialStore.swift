@@ -290,8 +290,21 @@ nonisolated struct CredentialStore: CredentialStoring, Sendable {
         query[kSecReturnData as String] = false
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
-        var item: CFTypeRef?
+        // Never prompt. Asking "is there one saved?" is not asking to read it,
+        // and opening the account sheet must not put a Face ID sheet in front of
+        // someone who only wanted to look.
+        //
+        // Without this, matching an item guarded by a biometric access control
+        // can raise the authentication UI even though no data was requested.
+        query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUISkip
 
-        return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+
+        // `errSecInteractionNotAllowed` means the item is there and declined to
+        // be read without authentication — which answers the question asked.
+        // Treating it as absent would hide a saved sign-in behind the very
+        // prompt this avoids.
+        return status == errSecSuccess || status == errSecInteractionNotAllowed
     }
 }

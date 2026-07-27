@@ -22,7 +22,6 @@ struct AccountSummary: View {
 
     let account: AccountStore
 
-    @State private var isConfirmingSignOut = false
 
     var body: some View {
         Form {
@@ -40,7 +39,7 @@ struct AccountSummary: View {
 
             Section {
                 Button("Sign Out", role: .destructive) {
-                    isConfirmingSignOut = true
+                    Task { await account.signOut() }
                 }
                 .disabled(account.isWorking)
             } footer: {
@@ -49,19 +48,6 @@ struct AccountSummary: View {
         }
         .navigationTitle("Account")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            "Sign out of your Township account?",
-            isPresented: $isConfirmingSignOut,
-            titleVisibility: .visible
-        ) {
-            Button("Sign Out", role: .destructive) {
-                Task { await account.signOut() }
-            }
-
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The saved sign-in will be removed from this device. Everything else is unchanged.")
-        }
     }
 }
 
