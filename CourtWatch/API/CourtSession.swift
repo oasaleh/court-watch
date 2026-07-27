@@ -133,6 +133,24 @@ actor CourtSession {
         transport
     }
 
+    /// Rotates the pairing and mints a fresh one, as a single step.
+    ///
+    /// For a caller that has just been told its handshake is stale, "discard
+    /// and get another" is one operation, not two — and spelling it as two
+    /// leaves a suspension point in the middle where another caller can
+    /// interleave and be handed the token that is about to be thrown away.
+    ///
+    /// It exists so a caller can obtain a renewed pairing **without being
+    /// handed the ability to discard the session as a side effect**. That
+    /// distinction is load-bearing for the session check next door: it must be
+    /// able to replay a genuinely stale handshake, and it must never be able
+    /// to throw a healthy jar away, because on that endpoint the commonest
+    /// answer of all looks exactly like an expiry.
+    func renewedToken() async throws -> String {
+        invalidate()
+        return try await token()
+    }
+
     private static func handshake(using transport: any HTTPTransport) async throws -> String {
         var request = URLRequest(url: handshakeURL)
         request.httpMethod = "GET"
