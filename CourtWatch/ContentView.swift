@@ -33,6 +33,25 @@ nonisolated enum LastRefreshedText {
     }
 }
 
+/// The always-visible status line: what is being shown, and how old it is.
+///
+/// The filter is named here as well as in the toolbar because this line cannot
+/// collapse. A toolbar control can and does reduce itself to a bare icon when
+/// space is tight, and the one thing that must never be hidden is that the user
+/// is looking at a deliberately narrowed day — otherwise a filtered evening
+/// reads as a fully booked one, which is the app lying by omission about how
+/// busy the courts are.
+nonisolated enum StatusLineText {
+
+    static func line(filter: StartTimeFilter, fetchedAt: Date) -> String {
+        let updated = LastRefreshedText.line(at: fetchedAt)
+
+        guard filter.start != nil else { return updated }
+
+        return "\(filter.label) · \(updated)"
+    }
+}
+
 struct ContentView: View {
 
     let favorites: FavoritesStore
@@ -153,13 +172,14 @@ struct ContentView: View {
         // visible however far the user has scrolled. UI-07 is about not having
         // to hunt for it.
         .safeAreaInset(edge: .bottom) {
-            Text(LastRefreshedText.line(at: fetchedAt))
+            Text(StatusLineText.line(filter: filter, fetchedAt: fetchedAt))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
                 .background(.bar)
-                .accessibilityLabel("Last updated \(CourtTime.string(from: fetchedAt))")
+                .accessibilityLabel(
+                    StatusLineText.line(filter: filter, fetchedAt: fetchedAt))
         }
         .toolbar {
             // The active choice is shown, not just an icon. A user who has
@@ -180,8 +200,16 @@ struct ContentView: View {
                         }
                     }
                 } label: {
-                    Label(filter.label, systemImage: "clock")
-                        .labelStyle(.titleAndIcon)
+                    // A `Label` in an iOS toolbar collapses to its icon whatever
+                    // label style is asked for — measured, not assumed — which
+                    // would hide the one thing this control exists to disclose.
+                    // `Text` does not collapse, so an active filter is named in
+                    // the toolbar as well as in the status line below.
+                    if filter.start == nil {
+                        Label("Start time", systemImage: "clock")
+                    } else {
+                        Text(filter.label)
+                    }
                 }
             }
 

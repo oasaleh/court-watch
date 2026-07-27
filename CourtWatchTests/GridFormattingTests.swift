@@ -262,4 +262,41 @@ struct GridFormattingTests {
                 "From 3:00 PM", "From 6:00 PM", "From 8:00 PM",
             ])
     }
+
+    // MARK: - The always-visible status line
+
+    /// A composed string, so it needs asserting in its own right: neither half
+    /// being correct proves the join is.
+    @Test("The status line is just the refresh time when nothing is filtered")
+    func rendersUnfilteredStatusLine() throws {
+        #expect(
+            try StatusLineText.line(filter: .anyTime, fetchedAt: referenceInstant())
+                == "Updated 2:00 PM")
+    }
+
+    /// The disclosure that stops a narrowed day reading as a quiet one. Both
+    /// times are twelve-hour, and the filter is named first because that is the
+    /// part that explains what the user is looking at.
+    @Test("An active filter is named in the status line, before the refresh time")
+    func rendersFilteredStatusLine() throws {
+        let line = try StatusLineText.line(
+            filter: StartTimeFilter(start: try slot("18:00:00")),
+            fetchedAt: referenceInstant())
+
+        #expect(line == "From 6:00 PM · Updated 2:00 PM")
+        #expect(line.contains("18:00") == false)
+        #expect(line.contains("14:00") == false)
+    }
+
+    @Test("Every offered filter produces a status line naming it")
+    func statusLineNamesEveryFilter() throws {
+        let reference = try referenceInstant()
+
+        for choice in StartTimeFilter.choices where choice.start != nil {
+            let line = StatusLineText.line(filter: choice, fetchedAt: reference)
+
+            #expect(line.hasPrefix(choice.label), "\(line)")
+            #expect(line.hasSuffix("Updated 2:00 PM"), "\(line)")
+        }
+    }
 }
