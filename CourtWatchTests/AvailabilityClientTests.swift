@@ -449,4 +449,243 @@ struct AvailabilityClientTests {
     func harnessOffersNothingWhenUnconfigured() {
         #expect(FailureSimulation.makeSession() == nil)
     }
+
+    // MARK: - The identity on the wire
+
+    /// Anonymous encodes zero, exactly as it always has.
+    @Test("An anonymous fetch still encodes customer_id as 0")
+    func anonymousEncodesZero() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let client = AvailabilityClient(session: CourtSession { transport })
+
+        _ = try await client.fetch(on: try testDay(), as: .anonymous)
+
+        let body = try decodedBody(try #require(transport.posts.first))
+
+        #expect(body["customer_id"] as? Int == 0)
+    }
+
+    @Test("A signed-in fetch encodes the real customer id")
+    func signedInEncodesTheRealID() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let client = AvailabilityClient(session: CourtSession { transport })
+
+        _ = try await client.fetch(
+            on: try testDay(), as: .signedIn(customerID: 4_471_056))
+
+        let body = try decodedBody(try #require(transport.posts.first))
+
+        #expect(body["customer_id"] as? Int == 4_471_056)
+    }
+
+    /// **The assertion that carries this task.**
+    ///
+    /// Compared field by field on the encoded bodies rather than on the
+    /// parameters: `customer_id` differs and *everything else is identical*.
+    /// Asserting only that the id changed would pass a version that also
+    /// quietly altered `resident`, `reload`, or the date — and the whole
+    /// promise here is that signing in changes exactly one integer.
+    @Test("Signing in changes the customer id and nothing else in the body")
+    func onlyTheCustomerIDDiffers() async throws {
+        func body(for identity: Identity) async throws -> [String: Any] {
+            let transport = ScriptedTransport(bodies: [
+                handshakePage(token: firstToken),
+                try fixtureBody(Fixture.anonymous),
+            ])
+            let client = AvailabilityClient(session: CourtSession { transport })
+
+            let window = AvailabilityClient.SlotWindow(
+                start: try #require(SlotTime(apiString: "14:00:00")),
+                end: try #require(SlotTime(apiString: "22:00:00")))
+
+            _ = try await client.fetch(on: try testDay(), window: window, as: identity)
+
+            return try decodedBody(try #require(transport.posts.first))
+        }
+
+        let anonymous = try await body(for: .anonymous)
+        let signedIn = try await body(for: .signedIn(customerID: 4_471_056))
+
+        #expect(Set(anonymous.keys) == Set(signedIn.keys))
+        #expect(anonymous["customer_id"] as? Int == 0)
+        #expect(signedIn["customer_id"] as? Int == 4_471_056)
+
+        for key in anonymous.keys where key != "customer_id" {
+            let before = String(describing: anonymous[key])
+            let after = String(describing: signedIn[key])
+
+            #expect(before == after, "\(key) changed with the identity: \(before) -> \(after)")
+        }
+    }
+
+    /// Exactly one integer moved, and the rest of the payload is identical.
+    ///
+    /// Encoded with sorted keys, because `JSONEncoder` emits dictionary keys in
+    /// an unspecified order and an unsorted comparison here fails at random —
+    /// which would be a flaky test rather than a strict one.
+    @Test("The encoded payloads differ only where the id is")
+    func payloadsAreOtherwiseByteIdentical() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+
+        let day = try testDay()
+        let anonymous = try encoder.encode(
+            AvailabilityClient.makeBody(day: day, window: nil, identity: .anonymous))
+        let signedIn = try encoder.encode(
+            AvailabilityClient.makeBody(
+                day: day, window: nil, identity: .signedIn(customerID: 4_471_056)))
+
+        let before = String(decoding: anonymous, as: UTF8.self)
+        let after = String(decoding: signedIn, as: UTF8.self)
+
+        #expect(before != after)
+        #expect(
+            before.replacingOccurrences(of: "\"customer_id\":0", with: "@")
+                == after.replacingOccurrences(of: "\"customer_id\":4471056", with: "@"))
+    }
+
+    // MARK: - Signing in cannot cost the grid
+
+    /// A refused signed-in fetch is replayed once as anonymous, and the grid
+    /// comes back. Without this, a user who signs in gets an error screen where
+    /// they used to have 80 courts.
+    @Test("A refused signed-in fetch falls back to anonymous and still returns the grid")
+    func signedInRefusalFallsBack() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            envelope(code: "1507", message: "Invalid request"),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let client = AvailabilityClient(session: CourtSession { transport })
+
+        let outcome = try await client.fetch(
+            on: try testDay(), as: .signedIn(customerID: 4_471_056))
+
+        #expect(outcome.availability.courts.count == 80)
+        #expect(outcome.downgradedToAnonymous)
+
+        // Exactly two POSTs, and no second handshake — the session was never
+        // the problem.
+        #expect(transport.posts.count == 2)
+        #expect(transport.requestCount == 3)
+
+        // The replay carried zero, and carried no credential of any kind.
+        let replay = try decodedBody(try #require(transport.posts.last))
+
+        #expect(replay["customer_id"] as? Int == 0)
+        #expect(replay.keys.contains("password") == false)
+        #expect(replay.keys.contains("login_name") == false)
+        #expect(replay.keys.count == 9)
+    }
+
+    /// The control that protects the existing behaviour: an anonymous fetch
+    /// that is refused is **not** replayed. Without this the fallback quietly
+    /// becomes a general-purpose retry and doubles the traffic of every
+    /// ordinary service failure.
+    @Test("An anonymous fetch that is refused still makes one POST and throws")
+    func anonymousRefusalIsNotReplayed() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            envelope(code: "1507", message: "Invalid request"),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let client = AvailabilityClient(session: CourtSession { transport })
+
+        await #expect(throws: APIError.service(code: "1507", message: "Invalid request")) {
+            try await client.fetch(on: try testDay(), as: .anonymous)
+        }
+
+        #expect(transport.posts.count == 1)
+        #expect(transport.requestCount == 2)
+    }
+
+    /// And the default parameter means the old spelling behaves the same way.
+    @Test("The plain fetch is still the anonymous one")
+    func plainFetchIsAnonymous() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            envelope(code: "1507", message: "Invalid request"),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let client = AvailabilityClient(session: CourtSession { transport })
+
+        await #expect(throws: APIError.service(code: "1507", message: "Invalid request")) {
+            try await client.fetch(on: try testDay())
+        }
+
+        #expect(transport.posts.count == 1)
+    }
+
+    /// Bounded at one. A signed-in fetch refused twice gives up rather than
+    /// looping against a WAF-fronted host.
+    @Test("A signed-in fetch refused twice stops rather than looping")
+    func twiceRefusedStops() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            envelope(code: "1507", message: "Invalid request"),
+            envelope(code: "1507", message: "Invalid request"),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let client = AvailabilityClient(session: CourtSession { transport })
+
+        await #expect(throws: APIError.service(code: "1507", message: "Invalid request")) {
+            try await client.fetch(on: try testDay(), as: .signedIn(customerID: 4_471_056))
+        }
+
+        #expect(transport.posts.count == 2, "one replay, and only one")
+        #expect(transport.requestCount == 3)
+    }
+
+    /// A successful signed-in fetch reports no downgrade — the flag has to
+    /// mean something, not merely be present.
+    @Test("A signed-in fetch that works reports no downgrade")
+    func successfulSignedInFetchReportsNoDowngrade() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let client = AvailabilityClient(session: CourtSession { transport })
+
+        let outcome = try await client.fetch(
+            on: try testDay(), as: .signedIn(customerID: 4_471_056))
+
+        #expect(outcome.downgradedToAnonymous == false)
+        #expect(transport.posts.count == 1)
+    }
+
+    /// The expiry retry is unchanged and independent of which identity is in
+    /// use: still one re-handshake, still one replay, and the replay still
+    /// carries the identity that was asked for.
+    @Test("The expiry retry is unaffected by being signed in")
+    func expiryRetryIsIndependentOfIdentity() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            envelope(code: "0012", message: "Invalid CSRF token"),
+            handshakePage(token: refreshedToken),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let client = AvailabilityClient(session: CourtSession { transport })
+
+        let outcome = try await client.fetch(
+            on: try testDay(), as: .signedIn(customerID: 4_471_056))
+
+        #expect(outcome.availability.courts.count == 80)
+        #expect(outcome.downgradedToAnonymous == false)
+        #expect(transport.posts.count == 2)
+
+        let tokens = transport.posts.map { $0.value(forHTTPHeaderField: "X-CSRF-Token") }
+        #expect(tokens == [firstToken, refreshedToken])
+
+        // The replay after an expiry keeps the identity — an expiry says
+        // nothing about who the app is.
+        for post in transport.posts {
+            #expect(try decodedBody(post)["customer_id"] as? Int == 4_471_056)
+        }
+    }
 }

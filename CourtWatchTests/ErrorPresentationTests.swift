@@ -46,7 +46,7 @@ nonisolated enum ErrorPresentationCases {
         .slotTimesMissing,
         .credentialsRejected,
         .captchaRequired,
-        .signedInWithoutIdentity,
+        .signedInWithoutAccount,
     ]
 
     /// Codes that mean the user's own connection is down and they can do
@@ -78,7 +78,7 @@ nonisolated enum ErrorPresentationCases {
         .slotTimesMissing,
         .credentialsRejected,
         .captchaRequired,
-        .signedInWithoutIdentity,
+        .signedInWithoutAccount,
     ]
 
     /// The five where trying again is a reasonable thing to do.
@@ -185,7 +185,7 @@ struct ErrorPresentationTests {
     /// anonymous and everything works.
     @Test("The no-identity case reads as a state rather than a failure")
     func noIdentityReadsAsAState() {
-        let presentation = ErrorPresentation.of(.signedInWithoutIdentity)
+        let presentation = ErrorPresentation.of(.signedInWithoutAccount)
         let text = (presentation.title + " " + presentation.message).lowercased()
 
         #expect(text.contains("nothing is missing"))
@@ -200,7 +200,7 @@ struct ErrorPresentationTests {
     /// any of the eight that already existed.
     @Test("The three sign-in cases are distinct from each other and from the rest")
     func signInCasesAreDistinct() {
-        let signIn: [APIError] = [.credentialsRejected, .captchaRequired, .signedInWithoutIdentity]
+        let signIn: [APIError] = [.credentialsRejected, .captchaRequired, .signedInWithoutAccount]
         let existing: [APIError] = [
             .transport(.notConnectedToInternet), .transport(.timedOut), .http(-1), .notJSON,
             .decoding("x"), .service(code: "1507", message: "Invalid request"),
@@ -240,7 +240,7 @@ struct ErrorPresentationTests {
             .notJSON,
             .credentialsRejected,
             .captchaRequired,
-            .signedInWithoutIdentity,
+            .signedInWithoutAccount,
         ]
 
         let forbidden = [

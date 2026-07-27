@@ -213,7 +213,7 @@ nonisolated struct SignInResult: Decodable, Sendable {
     /// availability request, so a reply carrying it has not given the app an
     /// identity, whatever it thinks it did.
     var usableCustomerID: Int? {
-        for candidate in [publicCustomerID?.value, customer?.customerID?.value, customer?.id?.value]
+        for candidate in [publicCustomerID?.value, customer?.identifier?.value, customer?.id?.value]
         {
             if let candidate, candidate != 0 { return candidate }
         }
@@ -224,18 +224,22 @@ nonisolated struct SignInResult: Decodable, Sendable {
 
 nonisolated struct SignInCustomer: Decodable, Sendable {
 
-    let customerID: FlexibleID?
+    /// Named for what it is here rather than for the wire key. Only the
+    /// availability request ever *encodes* `customer_id`; this one only reads
+    /// it, and keeping the encoder's spelling unique to the encoder is what
+    /// makes "exactly one place puts an id on the wire" checkable.
+    let identifier: FlexibleID?
     let id: FlexibleID?
 
     enum CodingKeys: String, CodingKey {
-        case customerID = "customer_id"
+        case identifier = "customer_id"
         case id
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
-        customerID = (try? container.decodeIfPresent(FlexibleID.self, forKey: .customerID)) ?? nil
+        identifier = (try? container.decodeIfPresent(FlexibleID.self, forKey: .identifier)) ?? nil
         id = (try? container.decodeIfPresent(FlexibleID.self, forKey: .id)) ?? nil
     }
 }

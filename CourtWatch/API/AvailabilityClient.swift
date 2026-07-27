@@ -126,13 +126,17 @@ nonisolated struct AvailabilityClient: Sendable {
         return false
     }
 
-    static func makeBody(day: Date, window: SlotWindow?) -> AvailabilityRequestBody {
+    static func makeBody(
+        day: Date, window: SlotWindow?, identity: Identity = .anonymous
+    ) -> AvailabilityRequestBody {
         AvailabilityRequestBody(
             facilityGroupID: tennisFacilityGroupID,
 
             // Zero is what unlocks the anonymous path. A real customer id sent
-            // without a login is rejected 1507.
-            customerID: 0,
+            // without a login is rejected 1507 — which is not a hypothetical
+            // any more, now that the app can send a real one: it is exactly
+            // the failure the anonymous replay below exists to absorb.
+            customerID: identity.customerID,
 
             companyID: 0,
             reserveDate: CourtTime.dayString(from: day),
@@ -144,16 +148,43 @@ nonisolated struct AvailabilityClient: Sendable {
         )
     }
 
-    func fetch(on day: Date, window: SlotWindow? = nil) async throws -> Availability {
-        let payload = try JSONEncoder().encode(Self.makeBody(day: day, window: window))
+    /// What came back, and whether it came back as the identity that was asked
+    /// for.
+    ///
+    /// The downgrade is reported in the returned value rather than held on the
+    /// client, because the client is a struct handed around by value and a flag
+    /// on it would be shared state with no owner. An app that dropped to
+    /// anonymous while still saying "signed in" would be telling the user a lie
+    /// they have no way to detect.
+    nonisolated struct FetchOutcome: Sendable {
+        let availability: Availability
 
-        // A plain counter, deliberately not recursion. Two attempts, and the
-        // second one is terminal whatever it returns.
-        var attempt = 0
+        /// True when a signed-in fetch was refused and replayed anonymously.
+        let downgradedToAnonymous: Bool
+    }
+
+    /// The anonymous fetch, unchanged in behaviour and in spelling.
+    ///
+    /// Kept so the proven path reads exactly as it always did, and so every
+    /// existing caller and test still says what it meant. It is a one-line
+    /// alias, not a second route: the implementation below is the only one.
+    func fetch(on day: Date, window: SlotWindow? = nil) async throws -> Availability {
+        try await fetch(on: day, window: window, as: .anonymous).availability
+    }
+
+    func fetch(
+        on day: Date, window: SlotWindow? = nil, as identity: Identity
+    ) async throws -> FetchOutcome {
+        var sending = identity
+        var payload = try JSONEncoder().encode(
+            Self.makeBody(day: day, window: window, identity: sending))
+
+        // Two plain counters, deliberately not recursion, and deliberately not
+        // one counter doing both jobs — they bound two different things.
+        var reHandshaked = false
+        var replayedAnonymously = false
 
         while true {
-            attempt += 1
-
             let token = try await session.token()
             let transport = await session.currentTransport()
 
@@ -198,14 +229,17 @@ nonisolated struct AvailabilityClient: Sendable {
                     throw APIError.slotTimesMissing
                 }
 
-                return availability
+                return FetchOutcome(
+                    availability: availability, downgradedToAnonymous: replayedAnonymously)
 
             case .expired(let code):
                 // The second expiry is terminal. Without this the client loops
                 // against a live, WAF-fronted public system.
-                guard attempt == 1 else {
+                guard reHandshaked == false else {
                     throw APIError.sessionExpired(code: code)
                 }
+
+                reHandshaked = true
 
                 // Discards the token *and* its cookie jar. Retrying without
                 // this returns the same code forever.
@@ -213,9 +247,32 @@ nonisolated struct AvailabilityClient: Sendable {
 
             case .service(let code, let message):
                 // 1507 and friends mean the request was wrong, not the session.
-                // Re-handshaking would repeat the same rejection and add load
-                // to someone else's server for nothing.
-                throw APIError.service(code: code, message: message)
+                //
+                // There is exactly one thing about the request this client can
+                // usefully change, and it is the identity: a real customer id
+                // on a session the server does not consider entitled to it was
+                // measured to come back 1507. So a **signed-in** fetch that is
+                // refused is replayed once as anonymous, and the user keeps the
+                // grid they had before they ever signed in.
+                //
+                // **This is not a credential retry.** The replay is the same
+                // availability POST with a different integer; this request has
+                // never contained a credential and cannot acquire one. The rule
+                // against resubmitting a credential automatically is about
+                // something else entirely, and conflating the two would forbid
+                // the one mechanism protecting the user from their own sign-in.
+                //
+                // Bounded at one, and only in the signed-in direction: an
+                // anonymous fetch that is refused fails exactly as it always
+                // has, with one POST and no replay.
+                guard sending.isSignedIn, replayedAnonymously == false else {
+                    throw APIError.service(code: code, message: message)
+                }
+
+                replayedAnonymously = true
+                sending = .anonymous
+                payload = try JSONEncoder().encode(
+                    Self.makeBody(day: day, window: window, identity: .anonymous))
             }
         }
     }

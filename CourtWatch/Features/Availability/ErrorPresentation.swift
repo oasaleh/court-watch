@@ -217,7 +217,7 @@ nonisolated struct ErrorPresentation: Hashable, Sendable {
                 retry: .probablyPersistent
             )
 
-        case .signedInWithoutIdentity:
+        case .signedInWithoutAccount:
             // The sign-in worked and produced nothing to use. The app is
             // anonymous and **fully working** — anonymous is the normal,
             // proven state that shows all 80 courts — so this must not read as

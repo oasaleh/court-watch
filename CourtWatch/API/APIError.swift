@@ -82,7 +82,7 @@ nonisolated enum APIError: Error, Equatable, Sendable {
     /// The sign-in reported success and produced no identity to use, or the
     /// session check would not confirm it. The app is anonymous and entirely
     /// working, so this is a *state* rather than a fault.
-    case signedInWithoutIdentity
+    case signedInWithoutAccount
 }
 
 nonisolated enum ResponseCode {
