@@ -156,6 +156,9 @@ private struct SlotCell: View {
     /// hue back to ink density, and the symbols come back with it.
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var body: some View {
         ZStack {
             shape
@@ -195,12 +198,41 @@ private struct SlotCell: View {
                     }
                     .overlay { rectangle.strokeBorder(tint, lineWidth: 2) }
             }
+        } else if layout == .labeled {
+            // A cell wide enough to write its hour inside can afford Apple
+            // Calendar's treatment: a muted wash of the hue with the text in the
+            // hue at full strength. The words carry the meaning, so the fill is
+            // free to recede.
+            //
+            // Mixed opaquely into the surface rather than `.opacity()`. A
+            // translucent hue takes its result from whatever is behind it and
+            // loses chroma over a dark background, which comes out muddy; a
+            // perceptual mix against the real surface does not.
+            rectangle.fill(mutedFill)
         } else {
-            // Every state is a solid block and hue tells them apart. Chosen
-            // deliberately: at a glance a row of blocks reads as a bar chart,
-            // and an outline for booked read as "faint" rather than "taken".
+            // A bare block, with no room for a word. Here the fill is the only
+            // channel there is, so it stays at full strength — muting it would
+            // weaken the one signal that makes a row readable at a glance, and
+            // muted red and green converge exactly on the axis most colour
+            // vision deficiencies already struggle with.
             rectangle.fill(tint)
         }
+    }
+
+    /// The hue mixed into the surface rather than laid over it.
+    ///
+    /// Dark mode takes a stronger mix: the same fraction that reads as a soft
+    /// wash on white comes out near-black on a dark surface.
+    private var mutedFill: Color {
+        let strength: Double =
+            switch (colorScheme, contrast) {
+            case (.dark, .increased): 0.30
+            case (.dark, _): 0.22
+            case (_, .increased): 0.24
+            default: 0.16
+            }
+
+        return Color(uiColor: .systemBackground).mix(with: tint, by: strength, in: .perceptual)
     }
 
     /// The hour, and nothing else.
@@ -252,12 +284,28 @@ private struct SlotCell: View {
         }
     }
 
-    /// Drawn on top of a block, so it has to contrast with it. Only the outline
-    /// and hatched treatments leave the background showing, and those exist
-    /// solely in the differentiate-without-colour path.
+    /// Drawn on top of a block, so it has to contrast with it.
+    ///
+    /// White works on a full-strength fill. On the muted Calendar-style wash it
+    /// would vanish, so there the hue itself is the ink — which is the whole
+    /// point of that treatment: quiet surface, confident text.
     private var markTint: Color {
-        guard differentiateWithoutColor, appearance.fill != .filled else { return .white }
-        return tint
+        if differentiateWithoutColor {
+            return appearance.fill == .filled ? .white : tint
+        }
+
+        return layout == .labeled ? strongInk : .white
+    }
+
+    /// The hue, pushed far enough toward the text colour to stay legible on its
+    /// own muted wash.
+    ///
+    /// Green and orange are the ones that need it: at full saturation both sit
+    /// close in luminance to a light background, and caption text needs 4.5:1.
+    private var strongInk: Color {
+        colorScheme == .dark
+            ? tint.mix(with: .white, by: 0.30, in: .perceptual)
+            : tint.mix(with: .black, by: 0.45, in: .perceptual)
     }
 }
 
