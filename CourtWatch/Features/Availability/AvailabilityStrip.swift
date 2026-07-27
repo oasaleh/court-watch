@@ -160,8 +160,8 @@ private struct SlotCell: View {
     let slot: SlotTime
     let label: String
 
-    /// The user has asked not to be made to rely on colour. Borders thicken so
-    /// the outline treatment reads as an outline rather than as a pale block.
+    /// The user has asked not to be made to rely on colour. Meaning moves from
+    /// hue back to ink density, and the symbols come back with it.
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     var body: some View {
@@ -182,31 +182,41 @@ private struct SlotCell: View {
     private var shape: some View {
         let rectangle = RoundedRectangle(cornerRadius: 2, style: .continuous)
 
-        switch appearance.fill {
-        case .filled:
+        if differentiateWithoutColor {
+            // Colour has been declined, so meaning goes back to ink density:
+            // solid, empty and hatched are three different amounts of ink and
+            // stay distinct with every hue removed.
+            switch appearance.fill {
+            case .filled:
+                rectangle.fill(tint)
+
+            case .outline:
+                rectangle.strokeBorder(tint, lineWidth: 2)
+
+            case .hatched:
+                rectangle
+                    .fill(tint.opacity(0.12))
+                    .overlay {
+                        DiagonalHatch()
+                            .stroke(tint, lineWidth: 1.5)
+                            .clipShape(rectangle)
+                    }
+                    .overlay { rectangle.strokeBorder(tint, lineWidth: 2) }
+            }
+        } else {
+            // Every state is a solid block and hue tells them apart. Chosen
+            // deliberately: at a glance a row of blocks reads as a bar chart,
+            // and an outline for booked read as "faint" rather than "taken".
             rectangle.fill(tint)
-
-        case .outline:
-            rectangle
-                .strokeBorder(tint, lineWidth: differentiateWithoutColor ? 2 : 1)
-
-        case .hatched:
-            rectangle
-                .fill(tint.opacity(0.12))
-                .overlay {
-                    DiagonalHatch()
-                        .stroke(tint, lineWidth: differentiateWithoutColor ? 1.5 : 1)
-                        .clipShape(rectangle)
-                }
-                .overlay {
-                    rectangle.strokeBorder(tint, lineWidth: differentiateWithoutColor ? 2 : 1)
-                }
         }
     }
 
-    /// The symbol appears only once a cell is wide enough to carry one, and the
-    /// hour only once it is wide enough to carry that. In the dense tier a cell
-    /// is a block and nothing else — which is D2 working, not a gap.
+    /// The hour, and nothing else.
+    ///
+    /// No symbol: once colour carries the state, a tick on every free cell is
+    /// ink spent repeating what the block already says, and it steals the height
+    /// that makes the hour legible. The symbol comes back only when colour has
+    /// been declined, where it is the thing doing the work rather than decoration.
     @ViewBuilder
     private var mark: some View {
         switch layout {
@@ -214,16 +224,21 @@ private struct SlotCell: View {
             EmptyView()
 
         case .glyph:
-            Image(systemName: appearance.symbolName)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(markTint)
+            if differentiateWithoutColor {
+                Image(systemName: appearance.symbolName)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(markTint)
+            }
 
         case .labeled:
-            VStack(spacing: 0) {
-                Image(systemName: appearance.symbolName)
-                    .font(.caption2.bold())
+            VStack(spacing: 1) {
+                if differentiateWithoutColor {
+                    Image(systemName: appearance.symbolName)
+                        .font(.caption2.bold())
+                }
+
                 Text(slot.displayString)
-                    .font(.caption2)
+                    .font(.caption.weight(.medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             }
@@ -232,22 +247,25 @@ private struct SlotCell: View {
         }
     }
 
-    /// Colour is a redundant channel layered on top of the ink, never the
-    /// carrier of meaning. Remove it entirely — greyscale, or any form of colour
-    /// blindness — and solid, empty and hatched still say three different
-    /// things.
+    /// Green is free, red is taken, orange is unknown.
+    ///
+    /// Hue is the primary channel here by explicit choice, which is why the
+    /// density treatment above is kept and reinstated the moment the system
+    /// reports that colour should not be relied on.
     private var tint: Color {
         switch appearance.fill {
         case .filled: .green
-        case .outline: .secondary
+        case .outline: .red
         case .hatched: .orange
         }
     }
 
-    /// Drawn on top of a solid block, so it has to be the contrasting colour
-    /// rather than the same one.
+    /// Drawn on top of a block, so it has to contrast with it. Only the outline
+    /// and hatched treatments leave the background showing, and those exist
+    /// solely in the differentiate-without-colour path.
     private var markTint: Color {
-        appearance.fill == .filled ? .white : tint
+        guard differentiateWithoutColor, appearance.fill != .filled else { return .white }
+        return tint
     }
 }
 

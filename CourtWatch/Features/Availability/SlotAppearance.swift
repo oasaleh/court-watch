@@ -9,13 +9,14 @@
 //  than either answer alone. It also means the drawing code holds no branch on
 //  status at all: it asks for an appearance and renders it.
 //
-//  D2: meaning is carried by **ink density** first and colour second. A solid
-//  block, an empty outline and a hatched fill are three different amounts of
-//  ink, which is a distinction that survives greyscale, every form of colour
-//  blindness, and a phone in direct sunlight. Colour is added at draw time as a
-//  redundant channel and is never the only one. That is also why no colour is
-//  named in this file: the treatment is the thing that carries meaning, and
-//  choosing a hue is a rendering detail that happens later.
+//  D2 (revised): colour is the primary channel and ink density is the fallback.
+//  Solid green reads as free, solid red as taken, orange as unknown — chosen
+//  because a row of solid blocks reads as a bar chart at a glance, where an
+//  outline for booked read as "faint" rather than "taken". Because hue alone
+//  fails for red-green colour blindness, the drawing code reinstates the density
+//  treatment — solid, outline, hatched — the moment iOS reports Differentiate
+//  Without Color, and brings the symbols back with it. Both channels are still
+//  described here; which one leads is a rendering decision made at draw time.
 //
 //  D6: the mapping is total over the three cases with no catch-all arm. A
 //  fourth status would stop this file compiling at the one place that decides
