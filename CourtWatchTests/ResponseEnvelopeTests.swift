@@ -103,13 +103,16 @@ struct ResponseEnvelopeTests {
         }
     }
 
+    /// The equality assertions stay here, where the error type lives. The copy
+    /// assertion that used to sit alongside them moved to
+    /// `ErrorPresentationTests` when the copy moved off this type — what it was
+    /// protecting is still protected, one layer out.
     @Test("A transport failure carries its URLError code")
     func transportErrorCarriesCode() {
         let error = APIError.transport(.notConnectedToInternet)
 
         #expect(error == APIError.transport(.notConnectedToInternet))
         #expect(error != APIError.transport(.timedOut))
-        #expect(error.userFacingMessage.isEmpty == false)
     }
 
     /// Malformed JSON is a decoding failure, not a service failure. Conflating
@@ -124,22 +127,6 @@ struct ResponseEnvelopeTests {
         }
 
         #expect(APIError.decoding("x") != APIError.service(code: "x", message: nil))
-    }
-
-    @Test("Every error case offers a message without exposing internals")
-    func errorsCarryUserFacingCopy() {
-        let errors: [APIError] = [
-            .transport(.timedOut),
-            .http(503),
-            .decoding("unexpected shape"),
-            .service(code: "1507", message: "Invalid request"),
-            .sessionExpired(code: "0012"),
-            .slotTimesMissing,
-        ]
-
-        for error in errors {
-            #expect(error.userFacingMessage.isEmpty == false)
-        }
     }
 
     /// The envelope fixtures decode through the real path rather than a

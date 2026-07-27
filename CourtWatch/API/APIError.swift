@@ -10,6 +10,14 @@
 //  successes. The status is not consulted anywhere in this file, and a grep
 //  gate in the phase verification keeps it that way.
 //
+//  This type carries no user-facing copy. It used to, as a placeholder, and the
+//  property was deleted rather than reworded: a presentation is a title *and* a
+//  sentence *and* a symbol *and* a claim about whether retrying helps, which is
+//  not a string; an API-layer error type is the wrong home for interface
+//  decisions; and leaving the old property beside the new mapping would create
+//  two sources of copy that drift, which is the failure a single mapping exists
+//  to prevent. `ErrorPresentation` is the one place a failure becomes words.
+//
 
 import Foundation
 
@@ -55,31 +63,6 @@ nonisolated enum APIError: Error, Equatable, Sendable {
     /// A successful response that published no usable slot times, which leaves
     /// nothing to render.
     case slotTimesMissing
-
-    /// Plain, non-technical copy.
-    ///
-    /// Phase 5 owns the real error presentation and will refine these strings.
-    /// The property exists now so the error type is complete and Phase 5
-    /// changes wording rather than restructuring the enum. No token, cookie, or
-    /// URL is ever interpolated here.
-    var userFacingMessage: String {
-        switch self {
-        case .transport:
-            return "Could not reach the court system. Check your connection and try again."
-        case .http:
-            return "The court system returned an unexpected response. Try again shortly."
-        case .decoding:
-            return "The court system's response could not be read. It may have changed."
-        case .notJSON:
-            return "Something is between this app and the court system."
-        case .service(_, let message):
-            return message ?? "The court system rejected the request."
-        case .sessionExpired:
-            return "The session could not be renewed. Try again."
-        case .slotTimesMissing:
-            return "No court times were published for today."
-        }
-    }
 }
 
 nonisolated enum ResponseCode {
