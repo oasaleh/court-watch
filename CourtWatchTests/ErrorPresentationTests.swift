@@ -30,10 +30,11 @@ import UIKit
 /// outside the enclosing actor.
 nonisolated enum ErrorPresentationCases {
 
-    /// Every distinct presentation the app can put on a failure screen. Eight,
-    /// because `.transport` splits into two — being offline and the far end not
-    /// answering have genuinely different remedies and are the two most common
-    /// failures by a wide margin.
+    /// Every distinct presentation the app can put on a failure screen.
+    /// Eleven, because `.transport` splits into two — being offline and the far
+    /// end not answering have genuinely different remedies and are the two most
+    /// common failures by a wide margin — and because sign-in adds three ways a
+    /// credential exchange can end badly.
     static let all: [APIError] = [
         .transport(.notConnectedToInternet),
         .transport(.timedOut),
@@ -43,6 +44,9 @@ nonisolated enum ErrorPresentationCases {
         .service(code: "1507", message: "Invalid request"),
         .sessionExpired(code: "0012"),
         .slotTimesMissing,
+        .credentialsRejected,
+        .captchaRequired,
+        .signedInWithoutIdentity,
     ]
 
     /// Codes that mean the user's own connection is down and they can do
@@ -72,6 +76,9 @@ nonisolated enum ErrorPresentationCases {
         .decoding("keyNotFound"),
         .service(code: "1507", message: "Invalid request"),
         .slotTimesMissing,
+        .credentialsRejected,
+        .captchaRequired,
+        .signedInWithoutIdentity,
     ]
 
     /// The five where trying again is a reasonable thing to do.
@@ -97,7 +104,11 @@ struct ErrorPresentationTests {
     func everyPresentationIsDistinct() {
         let all = ErrorPresentationCases.all.map { ErrorPresentation.of($0) }
 
-        #expect(all.count == 8)
+        // Enumerated, never a hand-written number: a count that has to be
+        // edited by hand is a count that will eventually be wrong, and a wrong
+        // one here would silently stop covering the newest case.
+        #expect(all.count == ErrorPresentationCases.all.count)
+        #expect(all.count == 11)
 
         for (i, first) in all.enumerated() {
             for second in all[(i + 1)...] {
@@ -115,8 +126,98 @@ struct ErrorPresentationTests {
     func titlesAndMessagesAreUnique() {
         let all = ErrorPresentationCases.all.map { ErrorPresentation.of($0) }
 
-        #expect(Set(all.map(\.title)).count == 8)
-        #expect(Set(all.map(\.message)).count == 8)
+        #expect(Set(all.map(\.title)).count == ErrorPresentationCases.all.count)
+        #expect(Set(all.map(\.message)).count == ErrorPresentationCases.all.count)
+    }
+
+    /// Every presentation is a complete, readable sentence rather than a
+    /// fragment or an empty string.
+    @Test("Every presentation says something", arguments: ErrorPresentationCases.all)
+    func everyPresentationIsWritten(error: APIError) {
+        let presentation = ErrorPresentation.of(error)
+
+        #expect(presentation.title.isEmpty == false)
+        #expect(presentation.message.isEmpty == false)
+        #expect(presentation.title.hasSuffix(".") == false, "a headline carries no full stop")
+        #expect(presentation.message.hasSuffix("."))
+        #expect(presentation.symbolName.isEmpty == false)
+    }
+
+    // MARK: - The sentence AUTH-06 exists for
+
+    /// **A refused credential must warn that trying again has a cost.**
+    ///
+    /// Asserted directly rather than left to the distinctness check, because a
+    /// well-meaning edit shortening this to "Incorrect password" would pass
+    /// every other test in this file while removing the entire point of the
+    /// case. The app is the only thing that can say this: the server's own
+    /// message describes what went wrong and says nothing about what a second
+    /// attempt would cost.
+    @Test("The refusal names the cost of trying again")
+    func refusalWarnsAboutRetrying() {
+        let presentation = ErrorPresentation.of(.credentialsRejected)
+        let message = presentation.message.lowercased()
+
+        // It tells the user not to simply repeat the attempt...
+        #expect(message.contains("don't try again"))
+
+        // ...names what a further attempt would cost...
+        #expect(message.contains("one more wrong attempt"))
+        #expect(message.contains("extra check"))
+
+        // ...and points at where it would have to be resolved.
+        #expect(message.contains("website"))
+
+        // And it does not pretend a retry is the way forward.
+        #expect(presentation.retry == .probablyPersistent)
+    }
+
+    /// The captcha case sends the user somewhere they can actually act.
+    @Test("The captcha case points at the website")
+    func captchaSendsUserToTheWebsite() {
+        let presentation = ErrorPresentation.of(.captchaRequired)
+
+        #expect(presentation.message.lowercased().contains("website"))
+        #expect(presentation != ErrorPresentation.of(.credentialsRejected))
+    }
+
+    /// The no-identity case must read as a state, not a fault: the app is
+    /// anonymous and everything works.
+    @Test("The no-identity case reads as a state rather than a failure")
+    func noIdentityReadsAsAState() {
+        let presentation = ErrorPresentation.of(.signedInWithoutIdentity)
+        let text = (presentation.title + " " + presentation.message).lowercased()
+
+        #expect(text.contains("nothing is missing"))
+
+        // Nothing that reads as a fault of the app.
+        for alarming in ["error", "failed", "failure", "problem", "wrong", "couldn't"] {
+            #expect(text.contains(alarming) == false, "\(alarming) reads as a fault")
+        }
+    }
+
+    /// All three sign-in outcomes are distinct sentences, and none of them is
+    /// any of the eight that already existed.
+    @Test("The three sign-in cases are distinct from each other and from the rest")
+    func signInCasesAreDistinct() {
+        let signIn: [APIError] = [.credentialsRejected, .captchaRequired, .signedInWithoutIdentity]
+        let existing: [APIError] = [
+            .transport(.notConnectedToInternet), .transport(.timedOut), .http(-1), .notJSON,
+            .decoding("x"), .service(code: "1507", message: "Invalid request"),
+            .sessionExpired(code: "0012"), .slotTimesMissing,
+        ]
+
+        for (index, first) in signIn.enumerated() {
+            for second in signIn[(index + 1)...] {
+                #expect(ErrorPresentation.of(first) != ErrorPresentation.of(second))
+            }
+
+            for other in existing {
+                #expect(
+                    ErrorPresentation.of(first).title != ErrorPresentation.of(other).title,
+                    "a sign-in case borrowed an existing headline")
+            }
+        }
     }
 
     // MARK: - The leak rule
@@ -137,12 +238,21 @@ struct ErrorPresentationTests {
             .sessionExpired(code: "MARKER_SESSION_CODE"),
             .transport(.notConnectedToInternet),
             .notJSON,
+            .credentialsRejected,
+            .captchaRequired,
+            .signedInWithoutIdentity,
         ]
 
         let forbidden = [
             "keyNotFound", "CodingKeys", "DecodingError", "codingPath", "debugDescription",
             "MARKER_THIRD_PARTY_MESSAGE", "MARKER_SESSION_CODE", "1507", "0012",
             "://", "activecommunities", "csrf", "Cookie", "token",
+            // Nothing from a sign-in reply or a credential either. The three
+            // new cases carry no associated value at all, so this is cheap to
+            // keep true — and worth pinning anyway, because the next person to
+            // add a case will copy one of these.
+            "Invalid login name", "public_customer_id", "customer_id", "0000",
+            "recaptcha", "access_token", "@",
         ]
 
         for error in errors {

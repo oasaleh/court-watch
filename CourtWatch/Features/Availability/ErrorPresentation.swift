@@ -170,6 +170,67 @@ nonisolated struct ErrorPresentation: Hashable, Sendable {
                 symbolName: "calendar.badge.exclamationmark",
                 retry: .probablyPersistent
             )
+
+        case .credentialsRejected:
+            // **The most important sentence in this file.**
+            //
+            // The API does send its own text here — it names the login details
+            // as invalid — and it is genuinely the clearest description of what
+            // happened, written by the people who know. It still does not get
+            // used, and the reason is not squeamishness about third-party
+            // prose: it is that the server's sentence **omits the only thing
+            // that matters**.
+            //
+            // One more wrong attempt arms a human-verification challenge on
+            // the user's real Township booking account — an account they use
+            // to book real courts, which this app cannot un-arm and which they
+            // would have to sort out on the website. Passing the server's
+            // description through would replace the app's warning with a
+            // less useful sentence, dressed up as helpfulness.
+            //
+            // The count is deliberately not quoted. "One more attempt" is a
+            // number the user cannot verify and the server could change; what
+            // they can act on is "stop, and go and check".
+            return ErrorPresentation(
+                title: "Sign-In Refused",
+                message: "The Township didn't accept those sign-in details. Don't try "
+                    + "again straight away — one more wrong attempt makes the Township's site "
+                    + "demand an extra check that this app can't show, and you'd have to sort "
+                    + "that out on their website. Check your details there first.",
+                symbolName: "person.badge.key",
+                retry: .probablyPersistent
+            )
+
+        case .captchaRequired:
+            // Its own arm, not a flavour of refusal. The app cannot present a
+            // challenge, so the honest sentence sends the user to the one
+            // place that can — a real action, and the only one available.
+            //
+            // Now expected to be rare rather than likely: a successful sign-in
+            // on the website drew no challenge. It is a contingency, and it is
+            // sized as one.
+            return ErrorPresentation(
+                title: "The Website Needs to Check It's You",
+                message: "The Township's site is asking for an extra check that this app "
+                    + "can't show. Signing in once on their website should clear it.",
+                symbolName: "checkmark.shield",
+                retry: .probablyPersistent
+            )
+
+        case .signedInWithoutIdentity:
+            // The sign-in worked and produced nothing to use. The app is
+            // anonymous and **fully working** — anonymous is the normal,
+            // proven state that shows all 80 courts — so this must not read as
+            // a failure of the app. It says what happened and makes clear
+            // nothing is lost, because nothing is.
+            return ErrorPresentation(
+                title: "Signed In, Still Browsing Normally",
+                message: "The Township accepted the sign-in but didn't send back an account "
+                    + "for the app to use, so it's showing courts the same way it always "
+                    + "does. Nothing is missing.",
+                symbolName: "person.crop.circle.badge.questionmark",
+                retry: .probablyPersistent
+            )
         }
     }
 }

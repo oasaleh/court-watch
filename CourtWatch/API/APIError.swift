@@ -63,6 +63,26 @@ nonisolated enum APIError: Error, Equatable, Sendable {
     /// A successful response that published no usable slot times, which leaves
     /// nothing to render.
     case slotTimesMissing
+
+    /// The service refused the credentials.
+    ///
+    /// **Carries nothing at all.** There is nothing in the reply the user
+    /// should read that the app cannot say better itself — and the app has to
+    /// say something the API never will, namely that a second attempt has a
+    /// cost. An associated value here would be an invitation to interpolate it
+    /// later, which is exactly how the app's most important sentence would get
+    /// replaced by a less useful one.
+    case credentialsRejected
+
+    /// The service wants a human-verification challenge this app cannot
+    /// present. Its own case, not a flavour of refusal: the remedy is
+    /// different and the user can actually act on it.
+    case captchaRequired
+
+    /// The sign-in reported success and produced no identity to use, or the
+    /// session check would not confirm it. The app is anonymous and entirely
+    /// working, so this is a *state* rather than a fault.
+    case signedInWithoutIdentity
 }
 
 nonisolated enum ResponseCode {
