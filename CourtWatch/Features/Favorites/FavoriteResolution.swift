@@ -24,11 +24,10 @@ import Foundation
 
 /// What a saved selection came to, held against one response.
 ///
-/// `unmatched` is deliberately unused by the interface in this phase. Telling
-/// the user "one of the places you chose has disappeared" is error-state
-/// design and belongs with the rest of it; what this phase promised is that
-/// the name is *kept*, and it is. The value is here for that surface to pick
-/// up when it is built.
+/// `unmatched` is a place the user chose that this response did not list. It is
+/// kept rather than deleted because deleting is irreversible and silent, and it
+/// now reaches the screen: `NoticeText` turns it into one line saying the name
+/// is still saved.
 nonisolated struct ResolvedFavorites: Sendable, Equatable {
 
     /// Favorited places this response listed, in the response's own order.

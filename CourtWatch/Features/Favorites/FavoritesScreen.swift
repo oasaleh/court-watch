@@ -38,6 +38,16 @@ struct FavoritesScreen: View {
     /// did it could disagree about what hour it is.
     let day: VisibleDay
 
+    /// Courts whose data was short, courts that could not be read at all, and
+    /// every warning the response carried.
+    ///
+    /// Handed in for the same reason as `day`: this screen is a function of
+    /// what it is given. `NoticeText` decides which of them are worth a
+    /// sentence, and almost always the answer is none.
+    let degradedCourts: [String]
+    let unreadableCourts: Int
+    let warnings: [String]
+
     /// Opening the picker is the caller's business.
     ///
     /// This screen has two routes into it — the invitation below and a toolbar
@@ -54,18 +64,19 @@ struct FavoritesScreen: View {
         let resolved = FavoriteResolution.resolve(
             favorites: favorites.facilityNames, against: facilities)
 
-        // `resolved.unmatched` is intentionally unused. Saying "one of your
-        // places has disappeared" is error-state design and belongs with the
-        // rest of it; what Phase 3 owed the user is that the name is kept, and
-        // it is. The value is carried on ResolvedFavorites for that surface to
-        // pick up — it has not been forgotten.
+        let notices = NoticeText.lines(
+            unmatchedFavorites: resolved.unmatched,
+            degradedCourts: degradedCourts,
+            unreadableCourts: unreadableCourts,
+            warnings: warnings
+        )
 
         if resolved.matched.isEmpty {
             invitation
         } else if day.isFinished {
             finishedForToday
         } else {
-            grid(for: resolved.matched)
+            grid(for: resolved.matched, notices: notices)
         }
     }
 
@@ -101,7 +112,7 @@ struct FavoritesScreen: View {
     /// then draws at the same tier, which is what keeps the columns lined up
     /// across facilities without any shared scrolling machinery — and what makes
     /// "no horizontal scrolling" achievable at all.
-    private func grid(for facilities: [Facility]) -> some View {
+    private func grid(for facilities: [Facility], notices: [String]) -> some View {
         GeometryReader { proxy in
             let layout = StripLayout.resolve(
                 availableWidth: proxy.size.width,
@@ -114,6 +125,10 @@ struct FavoritesScreen: View {
             )
 
             List {
+                if notices.isEmpty == false {
+                    noticeStrip(notices)
+                }
+
                 ForEach(facilities) { facility in
                     FacilityAvailabilitySection(
                         facility: facility,
@@ -126,6 +141,30 @@ struct FavoritesScreen: View {
             .listStyle(.plain)
         }
     }
+
+    /// One line each for what was kept and never said.
+    ///
+    /// Low emphasis, no colour, no dismissal, and absent entirely when there is
+    /// nothing to say — which is every normal day, including both captured
+    /// ones. Deliberately *not* a fourth empty state: these sit above a grid
+    /// that exists and must never be the only thing on the screen.
+    ///
+    /// Grouped as one accessibility element so VoiceOver reads it as a short
+    /// paragraph rather than as a run of unrelated fragments before the courts
+    /// start.
+    private func noticeStrip(_ notices: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(notices, id: \.self) { notice in
+                Text(notice)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .listRowSeparator(.hidden)
+    }
 }
 
 #Preview("Nothing chosen") {
@@ -136,6 +175,9 @@ struct FavoritesScreen: View {
             facilities: [],
             favorites: favorites,
             day: .empty,
+            degradedCourts: [],
+            unreadableCourts: 0,
+            warnings: [],
             onChooseFacilities: {}
         )
         .navigationTitle("Courts")

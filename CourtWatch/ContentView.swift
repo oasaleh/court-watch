@@ -272,6 +272,9 @@ struct ContentView: View {
             favorites: favorites,
             day: VisibleDay.resolve(
                 availability: availability, now: clock.now, startingAt: filter.start),
+            degradedCourts: availability.degradedCourts,
+            unreadableCourts: availability.unreadableCourts,
+            warnings: availability.courts.flatMap(\.warnings),
             onChooseFacilities: { isChoosingFacilities = true }
         )
         // The platform pull gesture, awaiting the same load path the initial
