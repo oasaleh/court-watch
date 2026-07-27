@@ -200,14 +200,28 @@ private struct SlotCell: View {
             }
         } else {
             // Apple Calendar's treatment, at every width: a muted wash of the
-            // hue rather than a saturated block. Applied uniformly so a row does
-            // not change character when the day shortens and the cells widen.
+            // hue rather than a saturated block.
+            //
+            // The wash alone is not what makes a Calendar event read as
+            // unmistakably green — the **full-strength edge** down its leading
+            // side is. Without it a dark tint on a dark background is just mud,
+            // and green and red stop being tellable apart at a glance. With it,
+            // one saturated stripe per cell restores the hue at a size the eye
+            // catches immediately, without turning the row back into a wall of
+            // solid blocks.
             //
             // Mixed opaquely into the surface rather than `.opacity()`. A
             // translucent hue takes its result from whatever is behind it and
             // loses chroma over a dark background, which comes out muddy; a
             // perceptual mix against the real surface does not.
-            rectangle.fill(mutedFill)
+            rectangle
+                .fill(mutedFill)
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(tint)
+                        .frame(width: 3)
+                }
+                .clipShape(rectangle)
         }
     }
 
