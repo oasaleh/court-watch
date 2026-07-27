@@ -42,10 +42,15 @@ nonisolated struct StartTimeFilter: Hashable, Sendable, Identifiable {
     /// what is left of today.
     let start: SlotTime?
 
-    var id: String { start?.apiString ?? "any" }
+    var id: String { start?.apiString ?? "now" }
 
-    /// Show everything still to come.
-    static let anyTime = StartTimeFilter(start: nil)
+    /// Show everything still to come, and nothing that has ended.
+    ///
+    /// Named for what it does rather than for the absence of a filter. It reads
+    /// "Now" because that is literally the window — an earlier name of "any
+    /// time" claimed the opposite of the truth, since this state is the one that
+    /// hides the morning.
+    static let fromNow = StartTimeFilter(start: nil)
 
     /// A start time for each slot the day actually publishes.
     ///
@@ -58,16 +63,20 @@ nonisolated struct StartTimeFilter: Hashable, Sendable, Identifiable {
     /// Spelled as a closure, never `map(StartTimeFilter.init)`: an unapplied
     /// reference to a main-actor-isolated initializer does not convert.
     static func choices(for slots: [SlotTime]) -> [StartTimeFilter] {
-        [anyTime] + slots.map { hour in StartTimeFilter(start: hour) }
+        [fromNow] + slots.map { hour in StartTimeFilter(start: hour) }
     }
 
     /// What the control says, and what a screen reader announces.
+    ///
+    /// "Now" rather than "Any time": with no start chosen the app shows what is
+    /// still to come and hides what has ended, so naming it "any time" described
+    /// the one thing it does not do.
     ///
     /// Built from `SlotTime.displayString` so it goes through `CourtTime` like
     /// every other time in the app — anything else would print a 24-hour time
     /// on a device set that way, and would fail the discipline guard first.
     var label: String {
-        guard let start else { return "Any time" }
+        guard let start else { return "Now" }
 
         return "From \(start.displayString)"
     }

@@ -241,7 +241,7 @@ struct GridFormattingTests {
 
     @Test("The unfiltered choice names no time at all")
     func rendersUnfilteredChoiceLabel() {
-        #expect(StartTimeFilter.anyTime.label == "Any time")
+        #expect(StartTimeFilter.fromNow.label == "Now")
     }
 
     /// Every choice the control can offer, so adding one cannot slip past the
@@ -262,7 +262,7 @@ struct GridFormattingTests {
         // offered — a list that began later than the day did was the bug.
         #expect(
             choices.map(\.label) == [
-                "Any time",
+                "Now",
                 "From 7:00 AM", "From 8:00 AM", "From 9:00 AM", "From 10:00 AM",
                 "From 11:00 AM", "From 12:00 PM", "From 1:00 PM", "From 2:00 PM",
                 "From 3:00 PM", "From 4:00 PM", "From 5:00 PM", "From 6:00 PM",
@@ -277,7 +277,7 @@ struct GridFormattingTests {
     @Test("The status line is just the refresh time when nothing is filtered")
     func rendersUnfilteredStatusLine() throws {
         #expect(
-            try StatusLineText.line(filter: .anyTime, fetchedAt: referenceInstant())
+            try StatusLineText.line(filter: .fromNow, fetchedAt: referenceInstant())
                 == "Updated 2:00 PM")
     }
 

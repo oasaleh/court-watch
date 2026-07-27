@@ -86,7 +86,7 @@ struct ContentView: View {
     ///
     /// Narrowing the visible day is done from data already held; only a widening
     /// the app has computed it cannot serve costs a request.
-    @State private var filter = StartTimeFilter.anyTime
+    @State private var filter = StartTimeFilter.fromNow
 
     /// The single owner of "now" for the whole screen.
     ///

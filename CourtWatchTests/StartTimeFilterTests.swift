@@ -114,7 +114,7 @@ struct StartTimeFilterTests {
     func showsEverythingWithoutAFilter() throws {
         let day = VisibleDay.resolve(
             availability: try fullDay(), now: try central(hour: 6),
-            startingAt: StartTimeFilter.anyTime.start)
+            startingAt: StartTimeFilter.fromNow.start)
 
         #expect(day.slots.count == 16)
     }
@@ -170,7 +170,7 @@ struct StartTimeFilterTests {
     func buildsNoWindowWithoutAFilter() throws {
         let slots = try publishedSlots.map { try slot($0) }
 
-        #expect(StartTimeFilter.anyTime.window(over: slots, slotMinutes: 60) == nil)
+        #expect(StartTimeFilter.fromNow.window(over: slots, slotMinutes: 60) == nil)
     }
 
     @Test("A filter over an empty day asks for no window")
@@ -288,7 +288,7 @@ struct StartTimeFilterTests {
     func offersOrderedChoices() throws {
         let choices = StartTimeFilter.choices(for: try publishedSlots.map { try slot($0) })
 
-        #expect(choices.first == StartTimeFilter.anyTime)
+        #expect(choices.first == StartTimeFilter.fromNow)
         #expect(choices.count > 1)
 
         let hours = choices.compactMap(\.start)
