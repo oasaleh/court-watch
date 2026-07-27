@@ -208,14 +208,42 @@ struct FailureSimulationTests {
 
         let availability = try await client.fetch(on: try testDay())
 
-        // Three courts survive; the fourth could not be read.
-        #expect(availability.courts.count == 3)
+        // Seven courts survive; the eighth could not be read.
+        #expect(availability.courts.count == 7)
         #expect(availability.unreadableCourts == 1)
-        #expect(availability.degradedCourts == ["Bear Branch Tennis 3"])
+        #expect(
+            availability.degradedCourts == ["Bear Branch Tennis 3", "Meadowlake Tennis 1"])
         #expect(availability.slotTimes.count == 16)
     }
 
-    /// The unreadable statuses in the middle of the second court's row hold
+    /// The harness has to show a grid whatever the person running it has
+    /// favorited. A payload naming one facility shows them the invitation
+    /// screen instead of the thing they are trying to judge — which is how
+    /// three of the ten scenarios became unverifiable in practice.
+    @Test(
+        "Every data-bearing scenario spans several real facilities",
+        arguments: [
+            FailureSimulation.Scenario.degraded, .warning, .stale,
+        ]
+    )
+    func dataScenariosSpanFacilities(scenario: FailureSimulation.Scenario) async throws {
+        let (client, _) = client(for: scenario)
+
+        let availability = try await client.fetch(on: try testDay())
+        let names = Set(availability.facilities.map(\.name))
+
+        #expect(names.count >= 4, "\(scenario.rawValue) covered only \(names)")
+
+        // Named from the real capture, so a favorite made against the live API
+        // resolves against the simulation too.
+        for expected in [
+            "Bear Branch Tennis", "Shadowbend Tennis", "Meadowlake Tennis", "Falconwing Tennis",
+        ] {
+            #expect(names.contains(expected), "\(scenario.rawValue) is missing \(expected)")
+        }
+    }
+
+    /// The unreadable statuses in the middle of Shadowbend's second court hold
     /// their positions — the same guarantee `DefensiveDecodingTests` pins,
     /// asserted here through the harness the human will actually be looking at.
     @Test("The degraded scenario's unreadable hours keep their own places")
@@ -223,7 +251,7 @@ struct FailureSimulationTests {
         let (client, _) = client(for: .degraded)
 
         let availability = try await client.fetch(on: try testDay())
-        let court = try #require(availability.courts.first { $0.name == "Bear Branch Tennis 2" })
+        let court = try #require(availability.courts.first { $0.name == "Shadowbend Tennis 2" })
 
         #expect(court.slots.count == 16)
 
@@ -275,6 +303,27 @@ struct FailureSimulationTests {
         #expect(try #require(lines.first).contains("closed for maintenance"))
     }
 
+    /// The degraded scenario produces exactly two notices — one for the short
+    /// courts in the plural, one for the unreadable court in the singular —
+    /// which is what makes both forms visible at the checkpoint.
+    @Test("The degraded scenario produces both notice kinds, correctly numbered")
+    func degradedProducesBothNoticeKinds() async throws {
+        let (client, _) = client(for: .degraded)
+
+        let availability = try await client.fetch(on: try testDay())
+
+        let lines = NoticeText.lines(
+            unmatchedFavorites: [],
+            degradedCourts: availability.degradedCourts,
+            unreadableCourts: availability.unreadableCourts,
+            warnings: availability.courts.flatMap(\.warnings)
+        )
+
+        #expect(lines.count == 2)
+        #expect(lines.contains { $0.contains("2 courts") })
+        #expect(lines.contains { $0.contains("1 court ") })
+    }
+
     /// The good payload underlying `stale` and `warning` produces no notices at
     /// all, which is the state a normal launch shows.
     @Test("The warning scenario's courts are otherwise entirely ordinary")
@@ -283,7 +332,7 @@ struct FailureSimulationTests {
 
         let availability = try await client.fetch(on: try testDay())
 
-        #expect(availability.courts.count == 3)
+        #expect(availability.courts.count == 7)
         #expect(availability.degradedCourts.isEmpty)
         #expect(availability.unreadableCourts == 0)
     }
@@ -300,7 +349,7 @@ struct FailureSimulationTests {
 
         let first = try await client.fetch(on: try testDay())
 
-        #expect(first.courts.count == 3)
+        #expect(first.courts.count == 7)
         #expect(first.slotTimes.count == 16)
 
         // Every later attempt, through a fresh session exactly as the app makes

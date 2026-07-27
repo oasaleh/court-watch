@@ -335,44 +335,80 @@
             "0", "0", "1", "1", "0", "1", "0", "1",
         ].map { "{\"status\": \($0)}" }
 
-        fileprivate static let goodPayload = availability(resources: [
-            resource(id: "1", name: "\"Bear Branch Tennis 1\"", details: ordinaryStatuses),
-            resource(id: "2", name: "\"Bear Branch Tennis 2\"", details: otherStatuses),
-            resource(id: "3", name: "\"Bear Branch Tennis 3\"", details: ordinaryStatuses),
-        ])
+        /// The same row with 11 AM, noon and 1 PM unreadable.
+        ///
+        /// Deliberately in the *middle*. A shift caused by dropping them rather
+        /// than holding their places would be visible here as the afternoon
+        /// sliding an hour earlier, which is the one wrong answer this app must
+        /// never give.
+        private static let statusesWithUnreadableMiddle = otherStatuses.enumerated().map {
+            index, detail in
+            (4...6).contains(index) ? "{\"status\": null}" : detail
+        }
+
+        /// Courts spread across four real facilities.
+        ///
+        /// Deliberately not one facility. The harness has to show a grid
+        /// whatever the person running it happens to have favorited, and a
+        /// payload naming a single place shows them the choose-your-facilities
+        /// invitation instead of the screen they are trying to judge. These
+        /// four are real names from the capture, so a favorite made against the
+        /// live API resolves against the simulation too.
+        private static func spread(
+            bearBranch3: [String],
+            shadowbend2: [String],
+            meadowlake1: [String],
+            extraWarningOnShadowbend1: Bool = false
+        ) -> [String] {
+            let resources = [
+                resource(id: "1", name: "\"Bear Branch Tennis 1\"", details: ordinaryStatuses),
+                resource(id: "2", name: "\"Bear Branch Tennis 2\"", details: otherStatuses),
+                resource(id: "3", name: "\"Bear Branch Tennis 3\"", details: bearBranch3),
+                resource(
+                    id: "4", name: "\"Shadowbend Tennis 1\"", details: ordinaryStatuses,
+                    warnings: extraWarningOnShadowbend1
+                        ? [residencyNotice, "This facility is closed for maintenance today."]
+                        : [residencyNotice]),
+                resource(id: "5", name: "\"Shadowbend Tennis 2\"", details: shadowbend2),
+                resource(id: "6", name: "\"Meadowlake Tennis 1\"", details: meadowlake1),
+                resource(id: "7", name: "\"Falconwing Tennis 1\"", details: ordinaryStatuses),
+            ]
+
+            return resources
+        }
+
+        fileprivate static let goodPayload = availability(
+            resources: spread(
+                bearBranch3: ordinaryStatuses,
+                shadowbend2: otherStatuses,
+                meadowlake1: ordinaryStatuses))
 
         /// Everything the tolerant decoding and the notices exist for, at once:
-        /// a whole row, a row with unreadable statuses in the middle, a short
-        /// row, and a resource that cannot be read at all.
-        fileprivate static let degradedPayload = availability(resources: [
-            resource(id: "1", name: "\"Bear Branch Tennis 1\"", details: ordinaryStatuses),
-
-            // Unreadable statuses at 11 AM, noon and 1 PM. Each holds its own
-            // place — the hours after them must still be their own.
-            resource(
-                id: "2", name: "\"Bear Branch Tennis 2\"",
-                details: otherStatuses.enumerated().map { index, detail in
-                    (4...6).contains(index) ? "{\"status\": null}" : detail
-                }),
-
-            // Ten details against sixteen slots: short, named, padded.
-            resource(
-                id: "3", name: "\"Bear Branch Tennis 3\"",
-                details: Array(ordinaryStatuses.prefix(10))),
-
-            // No readable id: dropped, and counted.
-            resource(id: "null", name: "\"Bear Branch Tennis 4\"", details: ordinaryStatuses),
-        ])
+        /// whole rows, rows with unreadable statuses in the middle, short rows
+        /// on two different facilities, and a resource that cannot be read at
+        /// all.
+        fileprivate static let degradedPayload = availability(
+            resources: spread(
+                // Ten details against sixteen slots: short, named, padded.
+                bearBranch3: Array(ordinaryStatuses.prefix(10)),
+                shadowbend2: statusesWithUnreadableMiddle,
+                // A second short court, so the notice reads in the plural.
+                meadowlake1: Array(ordinaryStatuses.prefix(12))
+            )
+                // No readable id: dropped, and counted. Reads in the singular.
+                + [
+                    resource(
+                        id: "null", name: "\"Cranebrook Tennis 1\"", details: ordinaryStatuses)
+                ])
 
         /// The residency notice on every court, plus one the app has not
         /// accounted for — so the strip shows exactly one line.
-        fileprivate static let warningPayload = availability(resources: [
-            resource(id: "1", name: "\"Bear Branch Tennis 1\"", details: ordinaryStatuses),
-            resource(
-                id: "2", name: "\"Bear Branch Tennis 2\"", details: otherStatuses,
-                warnings: [residencyNotice, "This facility is closed for maintenance today."]),
-            resource(id: "3", name: "\"Bear Branch Tennis 3\"", details: ordinaryStatuses),
-        ])
+        fileprivate static let warningPayload = availability(
+            resources: spread(
+                bearBranch3: ordinaryStatuses,
+                shadowbend2: otherStatuses,
+                meadowlake1: ordinaryStatuses,
+                extraWarningOnShadowbend1: true))
     }
 
 #endif
