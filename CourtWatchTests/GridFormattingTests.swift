@@ -247,19 +247,26 @@ struct GridFormattingTests {
     /// Every choice the control can offer, so adding one cannot slip past the
     /// twelve-hour gate unasserted.
     @Test("Every offered choice is twelve-hour and none shows a 24-hour time")
-    func rendersEveryFilterChoice() {
-        for choice in StartTimeFilter.choices where choice.start != nil {
+    func rendersEveryFilterChoice() throws {
+        let slots = try publishedSlots.map { try slot($0) }
+        let choices = StartTimeFilter.choices(for: slots)
+
+        for choice in choices where choice.start != nil {
             #expect(choice.label.hasPrefix("From "), "\(choice.label)")
             #expect(
                 choice.label.hasSuffix(" AM") || choice.label.hasSuffix(" PM"), "\(choice.label)")
         }
 
         // The whole offered set, written out, so a reordering or a new entry has
-        // to be looked at rather than silently absorbed.
+        // to be looked at rather than silently absorbed. Every published slot is
+        // offered — a list that began later than the day did was the bug.
         #expect(
-            StartTimeFilter.choices.map(\.label) == [
-                "Any time", "From 9:00 AM", "From 12:00 PM",
-                "From 3:00 PM", "From 6:00 PM", "From 8:00 PM",
+            choices.map(\.label) == [
+                "Any time",
+                "From 7:00 AM", "From 8:00 AM", "From 9:00 AM", "From 10:00 AM",
+                "From 11:00 AM", "From 12:00 PM", "From 1:00 PM", "From 2:00 PM",
+                "From 3:00 PM", "From 4:00 PM", "From 5:00 PM", "From 6:00 PM",
+                "From 7:00 PM", "From 8:00 PM", "From 9:00 PM", "From 10:00 PM",
             ])
     }
 
@@ -291,8 +298,9 @@ struct GridFormattingTests {
     @Test("Every offered filter produces a status line naming it")
     func statusLineNamesEveryFilter() throws {
         let reference = try referenceInstant()
+        let slots = try publishedSlots.map { try slot($0) }
 
-        for choice in StartTimeFilter.choices where choice.start != nil {
+        for choice in StartTimeFilter.choices(for: slots) where choice.start != nil {
             let line = StatusLineText.line(filter: choice, fetchedAt: reference)
 
             #expect(line.hasPrefix(choice.label), "\(line)")
