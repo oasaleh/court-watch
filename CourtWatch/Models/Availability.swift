@@ -26,6 +26,22 @@ nonisolated enum SlotStatus: Hashable, Sendable {
     /// are free. Unknown stays unknown and the UI decides how to say so.
     case unknown(Int)
 
+    /// An hour the payload said nothing readable about.
+    ///
+    /// The distinction from `unknown` is worth keeping and easy to lose.
+    /// `unknown` is a value the API *did* send that this app does not
+    /// understand; this is the API not having said anything at all — either
+    /// because the court published fewer details than there were slots, or
+    /// because the one it published for this hour could not be read.
+    ///
+    /// Both mean the app cannot claim the court is free, which is the only
+    /// thing that matters at the point of drawing — and so both render
+    /// identically. But they are different facts about what arrived, and the
+    /// domain keeps them apart because they are diagnostically different and
+    /// separately testable. The collapse happens in `SlotAppearance`, once, on
+    /// purpose.
+    case unpublished
+
     init(rawStatus: Int) {
         switch rawStatus {
         case 0: self = .available

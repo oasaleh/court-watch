@@ -25,7 +25,11 @@ import Testing
 /// Argument lists live on a `nonisolated` type: `arguments:` is evaluated
 /// outside the enclosing actor.
 nonisolated enum SlotAppearanceCases {
-    static let all: [SlotStatus] = [.available, .booked, .unknown(7)]
+
+    /// Every state the domain can produce. Four cases, three appearances —
+    /// an unrecognised status and an unpublished hour deliberately collapse to
+    /// one look and one word, which is asserted directly below.
+    static let all: [SlotStatus] = [.available, .booked, .unknown(7), .unpublished]
 }
 
 private func slot(_ apiString: String) throws -> SlotTime {
@@ -70,6 +74,65 @@ struct SlotAppearanceTests {
         #expect(appearance.spokenState == "Availability unknown")
     }
 
+    /// An hour the payload said nothing about. Same treatment as an
+    /// unrecognised status, on purpose — see the identity assertion below.
+    @Test("An unpublished hour is hatched and says so")
+    func mapsUnpublished() {
+        let appearance = SlotAppearance.of(.unpublished)
+
+        #expect(appearance.fill == .hatched)
+        #expect(appearance.symbolName == "questionmark")
+        #expect(appearance.spokenState == "Availability unknown")
+    }
+
+    /// D6, as the one assertion that pins it.
+    ///
+    /// The domain keeps three causes apart — a value the app did not recognise,
+    /// a detail it could not read, and an hour the payload never mentioned —
+    /// because they are diagnostically different. The screen states one meaning,
+    /// because to someone standing outside a tennis court they are identical.
+    ///
+    /// Without this assertion a later edit "helpfully" giving the unpublished
+    /// case its own colour would pass every other test in this file.
+    @Test("An unpublished hour looks and sounds exactly like an unrecognised one")
+    func unpublishedIsIndistinguishableFromUnrecognised() {
+        #expect(SlotAppearance.of(.unpublished) == SlotAppearance.of(.unknown(7)))
+        #expect(SlotAppearance.of(.unpublished) == SlotAppearance.of(.unknown(1507)))
+
+        let unpublished = SlotAppearance.of(.unpublished)
+        let unknown = SlotAppearance.of(.unknown(7))
+
+        #expect(unpublished.fill == unknown.fill)
+        #expect(unpublished.symbolName == unknown.symbolName)
+        #expect(unpublished.spokenState == unknown.spokenState)
+        #expect(unpublished.inkWeight == unknown.inkWeight)
+    }
+
+    /// The same guarantee `neverLooksAvailable` makes for an unrecognised
+    /// status. An hour nothing was published about must never read as free —
+    /// that is the wrong answer that sends someone on a wasted drive.
+    @Test("An unpublished hour shares no channel with an available one")
+    func unpublishedNeverLooksAvailable() {
+        let available = SlotAppearance.of(.available)
+        let unpublished = SlotAppearance.of(.unpublished)
+
+        #expect(unpublished.fill != available.fill)
+        #expect(unpublished.symbolName != available.symbolName)
+        #expect(unpublished.spokenState != available.spokenState)
+        #expect(unpublished.inkWeight != available.inkWeight)
+    }
+
+    @Test("An unpublished hour shares no channel with a booked one either")
+    func unpublishedNeverLooksBooked() {
+        let booked = SlotAppearance.of(.booked)
+        let unpublished = SlotAppearance.of(.unpublished)
+
+        #expect(unpublished.fill != booked.fill)
+        #expect(unpublished.symbolName != booked.symbolName)
+        #expect(unpublished.spokenState != booked.spokenState)
+        #expect(unpublished.inkWeight != booked.inkWeight)
+    }
+
     @Test("The three appearances are pairwise different")
     func distinguishesEveryState() {
         let available = SlotAppearance.of(.available)
@@ -108,10 +171,18 @@ struct SlotAppearanceTests {
         #expect(unknown.inkWeight != booked.inkWeight)
     }
 
-    @Test("The three spoken words are pairwise different")
+    /// Four states, three words — and that is the design rather than a gap.
+    ///
+    /// Available and booked each have their own word. An unrecognised status and
+    /// an unpublished hour share one, because the answer to "can I play at six?"
+    /// is the same in both cases: the app does not know. Asserting the count
+    /// rather than listing the words keeps this honest if a fifth state is ever
+    /// added without a word of its own.
+    @Test("The four states speak three distinct words")
     func speaksThreeDistinctWords() {
         let spoken = SlotAppearanceCases.all.map { SlotAppearance.of($0).spokenState }
 
+        #expect(spoken.count == 4)
         #expect(Set(spoken).count == 3)
     }
 

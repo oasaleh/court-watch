@@ -58,33 +58,25 @@ struct AvailabilityStrip: View {
             // decides only what a cell *draws* — never what frame it gets.
             // Conflating those two jobs is how a strip ends up one pixel wide
             // of the screen it is supposed to fit.
-            ForEach(slots.indices, id: \.self) { index in
-                cell(at: index)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: cellHeight)
+            //
+            // Walking the pairs rather than the slot indices: `VisibleDay`
+            // guarantees one status per visible slot, so this is the same
+            // sixteen cells — but it is the shape that *cannot* read past
+            // either array, which is what lets the placeholder branch go. Every
+            // cell now goes through the appearance mapping and every cell is
+            // announced. There is no longer a cell hidden from VoiceOver, which
+            // was a screen-reader user silently losing squares a sighted user
+            // could see were empty.
+            ForEach(Array(zip(slots, statuses).enumerated()), id: \.offset) { index, pair in
+                SlotCell(
+                    appearance: SlotAppearance.of(pair.1),
+                    layout: layout,
+                    slot: pair.0,
+                    label: SlotAppearance.label(court: court.name, slot: pair.0)
+                )
+                .frame(maxWidth: .infinity)
+                .frame(height: cellHeight)
             }
-        }
-    }
-
-    @ViewBuilder
-    private func cell(at index: Int) -> some View {
-        if index < statuses.count {
-            SlotCell(
-                appearance: SlotAppearance.of(statuses[index]),
-                layout: layout,
-                slot: slots[index],
-                label: SlotAppearance.label(court: court.name, slot: slots[index])
-            )
-        } else {
-            // A court that published fewer statuses than there are slots. Phase
-            // 2 recorded that these exist and carries them deliberately. An
-            // empty cell keeps the column grid intact — dropping it would shift
-            // every later cell in this row out of alignment with the rest of
-            // the screen — and it is hidden from VoiceOver because "nothing is
-            // known about this hour" is Phase 5's error taxonomy to word, not
-            // something to invent here.
-            Color.clear
-                .accessibilityHidden(true)
         }
     }
 

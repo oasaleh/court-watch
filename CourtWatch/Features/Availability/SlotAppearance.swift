@@ -18,11 +18,17 @@
 //  Without Color, and brings the symbols back with it. Both channels are still
 //  described here; which one leads is a rendering decision made at draw time.
 //
-//  D6: the mapping is total over the three cases with no catch-all arm. A
-//  fourth status would stop this file compiling at the one place that decides
-//  how a state looks, rather than being quietly routed into an existing branch.
-//  That is deliberate and a grep gate keeps it that way — resist adding a
-//  `default` to silence the error, because the error is the feature.
+//  D6: the mapping is total over the four cases with no catch-all arm. A fifth
+//  status would stop this file compiling at the one place that decides how a
+//  state looks, rather than being quietly routed into an existing branch. That
+//  is deliberate and a grep gate keeps it that way — resist adding a `default`
+//  to silence the error, because the error is the feature.
+//
+//  Two of those four cases map to the same appearance, deliberately. An
+//  unrecognised status and an hour the payload never published are different
+//  facts, and the domain keeps them apart; to a user standing outside a tennis
+//  court they are the same answer, so the screen states one meaning. That
+//  collapse happens here, once, and is pinned by an equality assertion.
 //
 
 import Foundation
@@ -86,6 +92,31 @@ nonisolated struct SlotAppearance: Hashable, Sendable {
             // user-facing, and two different unrecognised codes must look
             // identical — putting an unexplained integer on a user's screen
             // would be worse than saying plainly that the app does not know.
+            return SlotAppearance(
+                fill: .hatched,
+                symbolName: "questionmark",
+                spokenState: "Availability unknown",
+                inkWeight: 0.55
+            )
+
+        case .unpublished:
+            // Identical to the arm above, and that is D6 rather than a
+            // copy-paste mistake — so it is spelled out rather than merged into
+            // one `case .unknown, .unpublished:` pattern, because the next
+            // reader's first instinct on seeing two identical arms is to
+            // collapse them, and the collapse is what would let one of them
+            // later drift.
+            //
+            // The domain distinguishes three causes: a value the app did not
+            // recognise, a detail it could not read, and an hour the payload
+            // never mentioned. The screen states one meaning, because the
+            // user's question is "can I play at six?" and the answer to all
+            // three is "the app does not know". A screen that told them apart
+            // would be describing the app's internals to someone standing on a
+            // tennis court.
+            //
+            // What must never happen is either of them reading as available.
+            // That is asserted channel by channel in SlotAppearanceTests.
             return SlotAppearance(
                 fill: .hatched,
                 symbolName: "questionmark",

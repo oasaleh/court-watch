@@ -291,12 +291,26 @@ struct VisibleDayTests {
         #expect(day.statuses(for: court).count == 9)
     }
 
-    /// Phase 2 recorded that courts publishing fewer statuses than there are
-    /// slots exist and are carried deliberately. Pairing by slot rather than by
-    /// index means such a court contributes fewer cells instead of reading past
-    /// its own end.
-    @Test("A court with fewer statuses than slots is truncated, not over-indexed")
-    func truncatesShortCourt() throws {
+    /// **This test inverts a Phase 4 assertion, deliberately.**
+    ///
+    /// Phase 4 paired a court's statuses against the visible slots by filtering
+    /// the court's own list, so a court publishing fewer statuses than there
+    /// were slots simply contributed fewer cells — and the view drew a blank,
+    /// screen-reader-hidden square for the columns it had run out of. Phase 5
+    /// removes that situation rather than wording it: every row is built by
+    /// looking up each visible slot in the court's own slots, so a row is always
+    /// exactly as long as the day and an hour the court never published says so
+    /// out loud.
+    ///
+    /// The old name and comment described truncation as the intended design.
+    /// Both are rewritten rather than left, because a stale name is how the
+    /// superseded rule gets argued back in as a simplification.
+    ///
+    /// `degradedCourts` is asserted unchanged: the domain still records that
+    /// this court's data was short. Padding is a presentation decision and
+    /// happens here, not in the decode.
+    @Test("A court with fewer statuses than slots is padded, not truncated")
+    func padsShortCourt() throws {
         let clock = FixedClock(now: try central(hour: 6))
         let data = try availability(
             slots: ["07:00:00", "08:00:00", "09:00:00", "10:00:00"],
@@ -311,14 +325,126 @@ struct VisibleDayTests {
         let day = VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
 
         #expect(day.slots.count == 4)
-        #expect(day.statuses(for: short) == [.available, .booked])
-        #expect(day.statuses(for: full).count == 4)
+
+        // Four entries, not two. The two the court published stay at their own
+        // indices; the hours it said nothing about say so.
+        #expect(
+            day.statuses(for: short) == [.available, .booked, .unpublished, .unpublished])
+        #expect(day.statuses(for: full) == [.available, .booked, .available, .booked])
+
+        // The model still describes what the server actually sent.
+        #expect(short.slots.count == 2, "the domain is not padded — only the resolved day is")
         #expect(data.degradedCourts == ["Some Tennis 1"])
+    }
+
+    /// A court that published nothing at all is still a court, and its row is
+    /// still the length of the day. Cannot be produced by any capture.
+    @Test("A court publishing no statuses gets a full row of unpublished hours")
+    func padsCourtPublishingNothing() throws {
+        let clock = FixedClock(now: try central(hour: 6))
+        let data = try availability(
+            slots: ["07:00:00", "08:00:00", "09:00:00"],
+            courts: [(id: 1, name: "Some Tennis 1", statuses: [])]
+        )
+        let court = try #require(data.courts.first)
+
+        let day = VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
+
+        #expect(day.slots.count == 3)
+        #expect(day.statuses(for: court) == [.unpublished, .unpublished, .unpublished])
+    }
+
+    /// The row is one entry per *visible* slot, never per published status. A
+    /// court carrying more than the day shows only the day.
+    @Test("A court publishing more statuses than there are visible slots is cut to the day")
+    func keepsOneEntryPerVisibleSlot() throws {
+        let clock = FixedClock(now: try central(hour: 14))
+        let data = try availability(
+            slots: ["12:00:00", "13:00:00", "14:00:00", "15:00:00"],
+            courts: [(id: 1, name: "Some Tennis 1", statuses: [0, 0, 1, 0])]
+        )
+        let court = try #require(data.courts.first)
+
+        let day = VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
+
+        #expect(day.slots.map(\.hour) == [14, 15])
+        #expect(day.statuses(for: court) == [.booked, .available])
+    }
+
+    /// The assertion that discriminates a lookup by slot time from index
+    /// arithmetic.
+    ///
+    /// A short court is missing its *last* hours, so filtering the day forward
+    /// means the visible window starts partway into what the court published.
+    /// An implementation that walked indices would hand back this court's first
+    /// status for the 8 AM column — labelling a 7 AM answer as an 8 AM one.
+    /// Looking each visible slot up by its own time cannot do that.
+    @Test("A padded row is keyed by slot time, not by position in the court's own list")
+    func alignsPaddedRowByTimeNotIndex() throws {
+        let clock = FixedClock(now: try central(hour: 6))
+        let data = try availability(
+            slots: ["07:00:00", "08:00:00", "09:00:00", "10:00:00"],
+            courts: [(id: 1, name: "Some Tennis 1", statuses: [0, 1])]
+        )
+        let court = try #require(data.courts.first)
+
+        let day = VisibleDay.resolve(
+            availability: data, now: clock.now, startingAt: try slot("08:00:00"))
+
+        #expect(day.slots.map(\.hour) == [8, 9, 10])
+
+        // 8 AM is the court's *second* published status, and it must appear
+        // first here. Index arithmetic would produce `.available` — the 7 AM
+        // answer, one hour out of place.
+        #expect(day.statuses(for: court) == [.booked, .unpublished, .unpublished])
+    }
+
+    /// A payload that publishes the same slot time twice must not take the app
+    /// down. No capture contains one, and the trapping dictionary initializer
+    /// would crash on it — crashing on malformed input being the exact opposite
+    /// of what the defensive decoding around this is for.
+    @Test("A repeated slot time does not trap")
+    func toleratesRepeatedSlotTime() throws {
+        let clock = FixedClock(now: try central(hour: 6))
+        let data = try availability(
+            slots: ["07:00:00", "07:00:00", "08:00:00"],
+            courts: [(id: 1, name: "Some Tennis 1", statuses: [0, 1, 1])]
+        )
+        let court = try #require(data.courts.first)
+
+        let day = VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
+
+        // Whatever the day comes out as, it comes out — and the row still has
+        // one entry per visible slot.
+        #expect(day.statuses(for: court).count == day.slots.count)
+
+        // The first value published for a repeated time wins, rather than the
+        // last. Either would be defensible; pinning one keeps it deliberate.
+        #expect(day.statuses(for: court).first == .available)
+    }
+
+    /// A day built from nothing at all has no rows to hand back and does not
+    /// crash reaching for one.
+    @Test("A day resolved from an empty availability produces no rows")
+    func resolvesEmptyAvailability() throws {
+        let clock = FixedClock(now: try central(hour: 12))
+        let empty = try availability(slots: [], courts: [])
+
+        let day = VisibleDay.resolve(availability: empty, now: clock.now, startingAt: nil)
+
+        #expect(day.slots.isEmpty)
+        #expect(empty.courts.isEmpty)
     }
 
     /// Elapsed-slot filtering is global, so every court shares one slot list and
     /// the whole screen gets a column grid for free — no shared-scroll
     /// machinery, no per-facility filter.
+    ///
+    /// The row-length assertion below used to hold only *incidentally*: no court
+    /// in either capture is short, so nothing would have been padded or
+    /// truncated either way. Rows are now built by looking every visible slot up
+    /// in the court's own list, so the same assertion is a guarantee about the
+    /// construction rather than an observation about this particular capture.
     @Test("Every court in every facility gets the identical slot list")
     func sharesOneSlotListAcrossTheCapture() throws {
         let clock = FixedClock(now: try central(hour: 14, minute: 15))
@@ -335,6 +461,28 @@ struct VisibleDayTests {
                     "\(court.name) has \(day.statuses(for: court).count) of \(day.slots.count)"
                 )
             }
+        }
+    }
+
+    /// The captured data publishes a readable status for all 1,280 of its
+    /// slots, so nothing in it should reach the padding path at all. If this
+    /// ever fails, either a capture was replaced or the lookup is dropping
+    /// statuses it should have found.
+    @Test("Nothing in the real capture is padded", arguments: Fixture.bothCaptures)
+    func capturedRowsAreWhollyPublished(fixture: String) throws {
+        let clock = FixedClock(now: try central(hour: 6))
+        let data = try capturedAvailability(fixture)
+
+        let day = VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
+
+        #expect(day.slots.count == 16)
+        #expect(data.degradedCourts.isEmpty)
+
+        for court in data.courts {
+            let row = day.statuses(for: court)
+
+            #expect(row.count == 16, "\(court.name)")
+            #expect(row.contains(.unpublished) == false, "\(court.name)")
         }
     }
 
@@ -460,6 +608,25 @@ struct VisibleDayTests {
         let day = VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
 
         #expect(day.statuses(for: court) == [.unknown(7)])
+        #expect(day.summary(for: facility) == nil)
+    }
+
+    /// Nor is a padded hour. A header promising "1 of 1 free at 8 AM" on the
+    /// strength of an hour the payload never mentioned would be the same wrong
+    /// answer, phrased more confidently.
+    @Test("A padded hour does not count as a free court")
+    func doesNotCountUnpublishedAsFree() throws {
+        let clock = FixedClock(now: try central(hour: 6))
+        let data = try availability(
+            slots: ["07:00:00", "08:00:00"],
+            courts: [(id: 1, name: "Some Tennis 1", statuses: [1])]
+        )
+        let facility = try #require(data.facilities.first)
+        let court = try #require(data.courts.first)
+
+        let day = VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
+
+        #expect(day.statuses(for: court) == [.booked, .unpublished])
         #expect(day.summary(for: facility) == nil)
     }
 
