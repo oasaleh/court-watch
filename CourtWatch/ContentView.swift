@@ -70,6 +70,15 @@ nonisolated enum StatusLineText {
 
 struct ContentView: View {
 
+    /// The process-wide session, handed down rather than built here.
+    ///
+    /// This screen used to construct one inside `load()`, so every fetch
+    /// performed its own handshake and got its own cookie jar. Signing in
+    /// cannot survive that: the login state lives in the jar of the session
+    /// that authenticated, and an availability POST on a different jar
+    /// carrying a real customer id was measured to be refused outright.
+    let session: CourtSession
+
     let favorites: FavoritesStore
 
     /// One value rather than three.
@@ -424,16 +433,10 @@ struct ContentView: View {
         defer { isFetching = false }
 
         do {
-            // The one conditional the harness costs the app. Everything else
-            // about this path — the client, its retry, its error handling — is
-            // the real thing, which is the whole point of injecting at the
-            // transport rather than posing a screen.
-            #if DEBUG
-                let session = FailureSimulation.makeSession() ?? CourtSession()
-            #else
-                let session = CourtSession()
-            #endif
-
+            // Built from the session the app owns, so the token and cookies
+            // that authenticated are the ones that carry this POST. The
+            // harness, when one is configured, is chosen at that point of
+            // ownership rather than here.
             let client = AvailabilityClient(session: session)
 
             // The translation from "what window is wanted" to "how the client is
@@ -488,5 +491,7 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView(favorites: FavoritesStore())
+    // The same session the app builds, so the preview is not a second
+    // arrangement that could drift. Nothing fetches until `.task` runs.
+    ContentView(session: CourtWatchApp.makeSession(), favorites: FavoritesStore())
 }

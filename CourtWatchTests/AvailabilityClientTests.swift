@@ -332,4 +332,121 @@ struct AvailabilityClientTests {
             try await client.fetch(on: try testDay())
         }
     }
+
+    // MARK: - One session, reused
+
+    /// The guarantee the app now depends on: a second fetch through the same
+    /// session costs no second handshake.
+    ///
+    /// Asserted on the **token both POSTs carried**, not on the request count
+    /// alone. A client that re-handshakes and happens to be handed the same
+    /// value back passes a count-only test while sending an extra GET to
+    /// someone else's server on every refresh — the same trap the expiry
+    /// replay documented in Phase 2.
+    @Test("Two fetches through one session handshake once and carry one token")
+    func reusesTheSessionAcrossFetches() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            try fixtureBody(Fixture.anonymous),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let session = CourtSession { transport }
+        let client = AvailabilityClient(session: session)
+
+        _ = try await client.fetch(on: try testDay())
+        _ = try await client.fetch(on: try testDay())
+
+        // One GET and two POSTs. A second handshake would make it four.
+        #expect(transport.requestCount == 3)
+        #expect(transport.posts.count == 2)
+
+        let tokens = transport.posts.map { $0.value(forHTTPHeaderField: "X-CSRF-Token") }
+        #expect(tokens == [firstToken, firstToken])
+    }
+
+    /// Two clients built from one session share its pairing too, which is what
+    /// makes signing in on one path and fetching on another possible at all.
+    @Test("Two clients over one session still handshake only once")
+    func twoClientsShareOneHandshake() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            try fixtureBody(Fixture.anonymous),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let session = CourtSession { transport }
+
+        _ = try await AvailabilityClient(session: session).fetch(on: try testDay())
+        _ = try await AvailabilityClient(session: session).fetch(on: try testDay())
+
+        #expect(transport.requestCount == 3)
+
+        let tokens = transport.posts.map { $0.value(forHTTPHeaderField: "X-CSRF-Token") }
+        #expect(tokens == [firstToken, firstToken])
+    }
+
+    /// The behaviour most at risk from keeping the session: a fetch *after* an
+    /// expiry must use the refreshed token, not the discarded one.
+    ///
+    /// With a session per load this could not be got wrong — the next load
+    /// started from nothing. Now the session outlives the call, so what it
+    /// holds afterwards is worth asserting.
+    @Test("A fetch after an expiry carries the refreshed token, not the stale one")
+    func laterFetchUsesTheRefreshedToken() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            envelope(code: "0012", message: "Invalid CSRF token"),
+            handshakePage(token: refreshedToken),
+            try fixtureBody(Fixture.anonymous),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let session = CourtSession { transport }
+        let client = AvailabilityClient(session: session)
+
+        _ = try await client.fetch(on: try testDay())
+        _ = try await client.fetch(on: try testDay())
+
+        // Two handshakes in total — the one at the start and the one the
+        // expiry forced — and no third.
+        #expect(transport.requestCount == 5)
+
+        let tokens = transport.posts.map { $0.value(forHTTPHeaderField: "X-CSRF-Token") }
+        #expect(tokens == [firstToken, refreshedToken, refreshedToken])
+    }
+
+    /// The session can still be deliberately reset, which is what sign-out
+    /// will need: invalidating between fetches produces a second handshake and
+    /// a second jar.
+    @Test("Invalidating between fetches mints a new token")
+    func invalidatingForcesASecondHandshake() async throws {
+        let transport = ScriptedTransport(bodies: [
+            handshakePage(token: firstToken),
+            try fixtureBody(Fixture.anonymous),
+            handshakePage(token: refreshedToken),
+            try fixtureBody(Fixture.anonymous),
+        ])
+        let session = CourtSession { transport }
+        let client = AvailabilityClient(session: session)
+
+        _ = try await client.fetch(on: try testDay())
+        await session.invalidate()
+        _ = try await client.fetch(on: try testDay())
+
+        #expect(transport.requestCount == 4)
+
+        let tokens = transport.posts.map { $0.value(forHTTPHeaderField: "X-CSRF-Token") }
+        #expect(tokens == [firstToken, refreshedToken])
+    }
+
+    /// With no scenario configured the harness offers nothing and the app
+    /// falls through to a real session.
+    ///
+    /// The configured branch cannot be driven from in-process: the harness
+    /// reads the process environment once, at launch, and the test process was
+    /// not launched with it set. That half is a checkpoint line — `show stale`
+    /// is precisely the scenario that only means anything if the app really
+    /// does keep one session across loads.
+    @Test("With nothing simulated the app builds a real session")
+    func harnessOffersNothingWhenUnconfigured() {
+        #expect(FailureSimulation.makeSession() == nil)
+    }
 }

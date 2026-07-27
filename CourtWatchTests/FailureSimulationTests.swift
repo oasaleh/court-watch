@@ -342,22 +342,26 @@ struct FailureSimulationTests {
     /// `stale` is a claim about the *sequence* of loads, so it takes two
     /// fetches to assert: the first must succeed and the second must fail, or
     /// the failed-refresh line cannot be seen at the checkpoint at all.
+    ///
+    /// Both fetches go through **one** session, exactly as the app now works —
+    /// it builds a session once at launch and every load shares it. Under the
+    /// old per-load session this passed for a different reason, and the
+    /// scenario is worth re-proving against the arrangement it will actually
+    /// run in.
     @Test("The stale scenario succeeds once and fails afterwards")
     func staleSucceedsThenFails() async throws {
         let transport = FailureSimulation.makeTransport(for: .stale)
-        let client = AvailabilityClient(session: CourtSession { transport })
+        let session = CourtSession { transport }
+        let client = AvailabilityClient(session: session)
 
         let first = try await client.fetch(on: try testDay())
 
         #expect(first.courts.count == 7)
         #expect(first.slotTimes.count == 16)
 
-        // Every later attempt, through a fresh session exactly as the app makes
-        // one on each load.
-        let refreshed = AvailabilityClient(session: CourtSession { transport })
-
+        // The same session and the same client, as a refresh would be.
         await #expect(throws: APIError.transport(.notConnectedToInternet)) {
-            try await refreshed.fetch(on: try testDay())
+            try await client.fetch(on: try testDay())
         }
     }
 

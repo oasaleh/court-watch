@@ -106,10 +106,12 @@
         /// The session to fetch through, or `nil` when nothing is being
         /// simulated and the app should talk to the real endpoint.
         ///
-        /// The transport is process-wide rather than per-session because
-        /// `ContentView` builds a fresh `CourtSession` for every load, and
-        /// `stale` — one good response, then failures — is a claim about the
-        /// sequence of loads rather than about one of them.
+        /// The transport is process-wide rather than per-session because a
+        /// session does not survive everything: `invalidate()` replaces the
+        /// transport it holds, and the app builds this session once at launch.
+        /// A scenario like `stale` — one good response, then failures — is a
+        /// claim about the *sequence* of loads rather than about one of them,
+        /// so what answers has to outlive any single session.
         static func makeSession() -> CourtSession? {
             guard let transport = sharedTransport else { return nil }
 
