@@ -223,10 +223,10 @@ private struct SlotCell: View {
     private var mutedFill: Color {
         let strength: Double =
             switch (colorScheme, contrast) {
-            case (.dark, .increased): 0.70
-            case (.dark, _): 0.55
-            case (_, .increased): 0.34
-            default: 0.24
+            case (.dark, .increased): 0.78
+            case (.dark, _): 0.64
+            case (_, .increased): 0.38
+            default: 0.28
             }
 
         return Color(uiColor: .systemBackground).mix(with: tint, by: strength, in: .perceptual)
