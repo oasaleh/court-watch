@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Layer 2 of 2 — the net.
+
+  Kept apart from the court so Icon Composer can float it on its own plane.
+  It is the one element of a court that is not painted on the ground, and
+  giving it real depth is what stops the mark reading as a window frame.
+
+  It runs past the boundary at both ends, where the posts would stand.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect x="486" y="219" width="52" height="586" fill="#FFFFFF"/>
+</svg>
