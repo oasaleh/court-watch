@@ -1,6 +1,7 @@
 # The app icon
 
-Two layers, ready to drag into Icon Composer:
+The icon itself is `CourtWatch/AppIcon.icon`, an Icon Composer file. This
+folder holds the artwork it is built from, and the notes for rebuilding it.
 
 | File | What it is |
 |---|---|
@@ -17,9 +18,10 @@ what they do across every appearance at once.
 
 **1. Open the tool.** In Xcode: *Xcode ▸ Open Developer Tool ▸ Icon Composer*.
 
-**2. Name it `AppIcon`.** *File ▸ Save*, into this folder, as `AppIcon`. The
-name matters: the target's App Icon setting is already `AppIcon`, so matching
-it means nothing else has to change.
+**2. Name it `AppIcon`.** *File ▸ Save*, as `AppIcon`, into the `CourtWatch/`
+source folder — see *Putting it in the app* below for why the location
+matters. The name matters too: the target's App Icon setting is already
+`AppIcon`, so matching it means nothing else has to change.
 
 **3. Drag both SVGs into the left sidebar.** They arrive as two layers inside a
 single default group.
@@ -71,14 +73,24 @@ doubles alleys close up, widen them in `1-Court.svg` — the two long lines at
 
 ## Putting it in the app
 
-Drag `AppIcon.icon` into the Project navigator, into the `CourtWatch` group,
-with *Copy items if needed* ticked and the `CourtWatch` target checked.
+Save the Icon Composer file as `AppIcon.icon` **inside the `CourtWatch/` source
+folder** — the one holding `CourtWatchApp.swift` — and not inside
+`Assets.xcassets`.
 
-Nothing else needs changing. `ASSETCATALOG_COMPILER_APPICON_NAME` is already
-`AppIcon`, and Xcode uses an Icon Composer file in preference to an asset
-catalog of the same name. `Assets.xcassets/AppIcon.appiconset` can then be
-deleted; it is empty anyway, which is why the app currently launches with a
-blank white tile.
+That distinction is the whole of it. An `.icon` file is a package: a folder
+holding `icon.json` and an `Assets/` directory. Dropping it into the asset
+catalogue looks right and quietly fails, because the catalogue takes the
+package apart into loose image sets and a data set, leaving nothing the system
+recognises as an icon. The app then launches with a blank white tile and no
+warning anywhere to say why.
+
+Nothing else needs doing. The target uses a file-system synchronized group, so
+a file placed in `CourtWatch/` is in the build already, and
+`ASSETCATALOG_COMPILER_APPICON_NAME` is `AppIcon`, which the filename matches.
+
+To check it worked, build and look inside the product: `AppIcon60x60@2x.png`
+and friends should be sitting at the top level of `CourtWatch.app`. If they
+are missing, the icon did not compile, whatever the canvas in Xcode shows.
 
 ## Editing it later
 
@@ -86,3 +98,7 @@ Select `AppIcon.icon` in the Project navigator and click *Open with Icon
 Composer* under the preview. The SVGs here stay the source of truth for the
 geometry: change one, then use *Replace* under Composition in the Appearance
 inspector to point the layer at the updated file.
+
+Note that Icon Composer copies the artwork into the package when you import
+it, so `CourtWatch/AppIcon.icon/Assets/` holds its own copy of each SVG. The
+two are only in step because a change is put through both.
