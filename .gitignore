@@ -32,3 +32,6 @@ Config/Local.xcconfig
 Secrets.plist
 *.xcconfig.local
 .env
+
+# Checkpoint screens — evidence for one review, regenerated on demand
+docs/checkpoints/
