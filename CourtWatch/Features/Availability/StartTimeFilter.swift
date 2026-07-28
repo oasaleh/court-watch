@@ -83,6 +83,8 @@ nonisolated struct StartTimeFilter: Hashable, Sendable, Identifiable {
 
     /// The window this filter wants over a day's slots.
     ///
+    /// **Unused by the app**, along with `covers` below — see the note there.
+    ///
     /// Nothing when no filter is set: that is a request for the whole day, which
     /// is exactly what an unwindowed fetch already is.
     ///
@@ -107,12 +109,25 @@ nonisolated struct StartTimeFilter: Hashable, Sendable, Identifiable {
     /// Whether data fetched under one window answers a request for another.
     ///
     /// The whole decision, deliberately a named function over two values rather
-    /// than a condition inlined at the call site. It is the thing standing
-    /// between the user and the silent-subset bug described in the file note, so
-    /// it is worth being able to point at, and worth testing in both directions.
+    /// than a condition inlined at the call site: worth being able to point at,
+    /// and worth testing in both directions.
     ///
     /// It consults nothing but its two arguments — no client, no cache, no
     /// clock — which is what makes it answerable in a test without a network.
+    ///
+    /// **Nothing in the app calls this.** It guarded the decision of whether a
+    /// filter change needed a fetch, and the app stopped windowing its requests
+    /// — it holds the whole day and filters locally, so every filter is a
+    /// subset of what is already in hand and no such decision is taken. It said
+    /// here that it was "the thing standing between the user and the
+    /// silent-subset bug", which was true and is not: it now stands between
+    /// nothing, and a reader who believed otherwise would be looking at a
+    /// guard that never runs.
+    ///
+    /// Kept, with the windowing machinery beside it, because the endpoint does
+    /// support a window and this is the tested, correct answer to the question
+    /// that reinstating one would immediately raise. Deleting it would mean
+    /// working it out again, and it was not obvious the first time.
     static func covers(held: RequestedWindow?, requested: RequestedWindow?) -> Bool {
         // Unwindowed held data is the whole day, which covers every request.
         guard let held else { return true }
