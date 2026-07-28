@@ -24,10 +24,15 @@
 //  one more wrong attempt costs the user something on their real Township
 //  account that this app cannot undo.
 //
-//  So after a refusal the submit button stays inert **until the field changes**.
-//  A second attempt requires a keystroke, which means it cannot happen by
-//  tapping, by an impatient double-tap, or by a stray gesture. There is no
-//  refresh gesture here either.
+//  So after a refusal the submit button stays inert **until either field
+//  changes**. A second attempt requires a keystroke, which means it cannot
+//  happen by tapping, by an impatient double-tap, or by a stray gesture. There
+//  is no refresh gesture here either.
+//
+//  Either field, not just the password: a refusal does not say which half was
+//  wrong, and a mistyped email left the button dead with nothing on screen to
+//  say that the way out was to touch a control the user had no reason to
+//  return to.
 //
 //  ## What is not covered by the suite
 //
@@ -105,6 +110,14 @@ struct SignInScreen: View {
                     .submitLabel(.next)
                     .onSubmit { focusedField = .password }
                     .disabled(account.isWorking)
+                    .onChange(of: username) {
+                        // Correcting either half earns another attempt. Only
+                        // the password reopening it left a user who had
+                        // mistyped their *email* with a permanently disabled
+                        // button and nothing on screen to say that touching the
+                        // other field was the way out.
+                        submissionClosed = false
+                    }
 
                 SecureField("Password", text: $password)
                     .textContentType(.password)
@@ -148,9 +161,9 @@ struct SignInScreen: View {
                     }
                 }
                 // Closed while a sign-in is in flight, and closed after a
-                // refusal until the field changes. **Not covered by the suite**
-                // — no test observes a rendered screen, so that this control
-                // actually holds the door is a checkpoint line.
+                // refusal until either field changes. **Not covered by the
+                // suite** — no test observes a rendered screen, so that this
+                // control actually holds the door is a checkpoint line.
                 .disabled(canSubmit == false)
 
                 if account.hasStoredCredential {
