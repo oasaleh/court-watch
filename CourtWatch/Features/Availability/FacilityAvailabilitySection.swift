@@ -144,12 +144,16 @@ struct FacilityAvailabilitySection: View {
     /// be duplicate ink. Below that width a cell is a bare block, and without
     /// this the screen is coloured squares with no way to tell which hour is
     /// which.
+    ///
+    /// The court-number column gets an empty spacer rather than a caption. It
+    /// used to read "Now", from when the leading column was always now-or-next;
+    /// allowing an explicit start time to reach back past now made that a
+    /// standing lie — picking 1 PM in the evening rendered "Now  1 PM  3 PM".
+    /// The leading hour is marked by weight instead, which cannot go stale.
     private var ruler: some View {
         HStack(spacing: StripLayout.defaultSpacing) {
-            Text("Now")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .frame(width: StripLayout.defaultLabelWidth, alignment: .leading)
+            Color.clear
+                .frame(width: StripLayout.defaultLabelWidth, height: 0)
 
             ForEach(Array(rulerLabels.enumerated()), id: \.offset) { index, label in
                 Text(label ?? "")
