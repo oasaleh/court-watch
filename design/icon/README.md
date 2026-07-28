@@ -25,17 +25,24 @@ it means nothing else has to change.
 back to front, so `1-Court` belongs underneath `2-Net`; the leading numbers
 are there to make that ordering survive an alphabetical import.
 
-**4. Set the background.** Click the icon's filename at the top of the sidebar,
-open the Appearance inspector, set Color to *All* and Fill to *Gradient*. A
-court blue reads well and, unlike green, cannot be confused with the green and
-red the grid itself uses to mean free and booked:
+**4. Set the background.** Select the **topmost row in the sidebar — the icon's
+own filename**, above every group. This is the only thing that carries the
+background; a group offers just Opacity and Blend Mode, and a layer's fill
+recolours that shape rather than what sits behind it. If the inspector is
+showing a *Mode* control reading Individual or Combined, you have a group
+selected, not the icon.
+
+With the icon selected, open the Appearance inspector, set Color to *All* and
+Fill to *Gradient*. A court blue reads well and, unlike green, cannot be
+confused with the green and red the grid itself uses to mean free and booked:
 
 - from `#4082D0` at the top
 - to `#1E549E` at the bottom
 
-**5. Leave the layers white.** Fill stays *Automatic*, which picks the white up
-from the SVG. That is also what makes the mono and tinted variants come out
-right, since those are derived from luminance.
+**5. Leave the layers white.** Select each layer in turn; their Fill stays
+*Automatic*, which picks the white up from the SVG. That is also what makes the
+mono and tinted variants come out right, since those are derived from
+luminance.
 
 **6. Give the net some height.** Select `2-Net`, and under Liquid Glass raise
 its shadow or translucency a little relative to the court. Only a little — the
