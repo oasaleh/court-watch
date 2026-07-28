@@ -25,6 +25,17 @@ import Foundation
 
 actor CourtSession {
 
+    /// A token and the cookie jar it was minted against, which is the only
+    /// unit either of them is meaningful in.
+    ///
+    /// A type rather than a tuple so that a call site cannot take one half and
+    /// pair it with something else — the mistake this represents is exactly
+    /// the one being designed out.
+    nonisolated struct Pairing: Sendable {
+        let token: String
+        let transport: any HTTPTransport
+    }
+
     /// Any tenant page carries the token. This one is what the app
     /// conceptually is.
     static let handshakeURL = URL(
@@ -100,7 +111,17 @@ actor CourtSession {
         }
 
         if let handshakeInFlight {
-            return try await handshakeInFlight.value
+            // Guarded like the path below, and for the same reason. A caller
+            // that joins a handshake already running is just as exposed to
+            // that handshake's jar being retired while it waits.
+            let mine = generation
+            let joined = try await handshakeInFlight.value
+
+            guard generation == mine else {
+                throw APIError.transport(.cancelled)
+            }
+
+            return joined
         }
 
         let task = Task { [transport] in
@@ -168,10 +189,35 @@ actor CourtSession {
 
     /// The transport the current token belongs to.
     ///
-    /// `AvailabilityClient` sends its POST through this so the token and the
-    /// cookies always travel together.
+    /// Deliberately not paired with `token()` at the call sites any more.
+    /// Asking for the two separately means two awaits, and an `invalidate` in
+    /// the gap between them sends the token from one jar with the cookies of
+    /// the next — the pairing this file says is not expressible. Use
+    /// ``pairing()``; this remains for callers that need only the jar.
     func currentTransport() -> any HTTPTransport {
         transport
+    }
+
+    /// A token and the jar it belongs to, obtained as one step.
+    ///
+    /// The invariant this whole file is built around is that the two travel
+    /// together, and the only way to keep it is to hand them over together.
+    /// Two calls cannot do it however carefully they are written, because the
+    /// actor is free to run anything else in the gap.
+    ///
+    /// The generation is checked across the suspension for the same reason
+    /// `token()` checks it: a jar retired while this was waiting makes both
+    /// halves stale, and returning them would be the mismatch under a
+    /// different name.
+    func pairing() async throws -> Pairing {
+        let mine = generation
+        let scraped = try await token()
+
+        guard generation == mine else {
+            throw APIError.transport(.cancelled)
+        }
+
+        return Pairing(token: scraped, transport: transport)
     }
 
     /// Rotates the pairing and mints a fresh one, as a single step.
@@ -190,6 +236,12 @@ actor CourtSession {
     func renewedToken() async throws -> String {
         invalidate()
         return try await token()
+    }
+
+    /// The same rotation, returning the jar alongside the token.
+    func renewedPairing() async throws -> Pairing {
+        invalidate()
+        return try await pairing()
     }
 
     private static func handshake(using transport: any HTTPTransport) async throws -> String {

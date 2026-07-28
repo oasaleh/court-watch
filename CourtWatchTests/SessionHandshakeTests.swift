@@ -265,6 +265,40 @@ struct SessionHandshakeTests {
         #expect(transport.requestCount == 2)
     }
 
+    /// The pairing must survive an invalidation landing in the middle of it.
+    ///
+    /// This is the shape the call sites used to have written out by hand — a
+    /// token fetched, then a jar fetched — with a suspension point between the
+    /// two that a sign-out could land in, sending one jar's token with the
+    /// next jar's cookies. Asking for both at once is what removes the gap;
+    /// this pins that the combined call refuses rather than returning halves
+    /// that no longer belong together.
+    @Test("A pairing interrupted by an invalidation is refused, not mismatched")
+    func pairingIsAtomicAcrossInvalidation() async throws {
+        let released = Gate()
+        let transport = RecordingTransport(
+            responses: [
+                .success(page(token: validToken)),
+                .success(page(token: secondToken)),
+            ],
+            gate: { await released.wait() }
+        )
+        let session = CourtSession { transport }
+
+        async let attempted: CourtSession.Pairing? = try? await session.pairing()
+        try await Task.sleep(for: .milliseconds(50))
+
+        await session.invalidate()
+        await released.open()
+
+        // Refused outright rather than answered with a stale half.
+        #expect(await attempted == nil)
+
+        // And the session is left able to mint a fresh, coherent pairing.
+        let next = try await session.pairing()
+        #expect(next.token == secondToken)
+    }
+
     @Test("Invalidating discards the token and fetches a new one")
     func invalidateForcesNewHandshake() async throws {
         let transport = RecordingTransport(responses: [

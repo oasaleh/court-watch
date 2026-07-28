@@ -74,17 +74,23 @@ nonisolated struct SignInClient: Sendable {
         while true {
             attempt += 1
 
-            let token = try await session.token()
-            let transport = await session.currentTransport()
+            // Token and jar in one call, so an invalidation cannot land between
+            // them and send a credential with a mismatched pairing. After an
+            // expiry the rotation is folded into the same call for the same
+            // reason.
+            let pairing =
+                attempt == 1
+                ? try await session.pairing()
+                : try await session.renewedPairing()
 
             var request = URLRequest(url: Self.endpoint)
             request.httpMethod = "POST"
             request.httpBody = payload
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue(token, forHTTPHeaderField: "X-CSRF-Token")
+            request.setValue(pairing.token, forHTTPHeaderField: "X-CSRF-Token")
             request.setValue("court-watch/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
 
-            let (data, _) = try await transport.send(request)
+            let (data, _) = try await pairing.transport.send(request)
 
             let envelope: SignInEnvelope
             do {
@@ -120,7 +126,8 @@ nonisolated struct SignInClient: Sendable {
                     throw APIError.sessionExpired(code: code)
                 }
 
-                await session.invalidate()
+                // The rotation happens as the first step of the next turn, in
+                // one call, rather than here and then separately.
 
             case .service(let code, let text):
                 throw APIError.service(code: code, message: text)

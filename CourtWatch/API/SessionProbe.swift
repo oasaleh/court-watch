@@ -105,12 +105,10 @@ nonisolated struct SessionProbe: Sendable {
 
         while true {
             do {
-                let token =
+                let pairing =
                     replayed
-                    ? try await session.renewedToken()
-                    : try await session.token()
-
-                let transport = await session.currentTransport()
+                    ? try await session.renewedPairing()
+                    : try await session.pairing()
 
                 // A cache-buster, as the web UI sends. Nothing depends on the
                 // value; it exists so an intermediary cannot answer this from
@@ -118,10 +116,10 @@ nonisolated struct SessionProbe: Sendable {
                 var request = URLRequest(
                     url: URL(string: "\(Self.endpoint)&ui_random=\(Int.random(in: 1...9_999_999))")!)
                 request.httpMethod = "GET"
-                request.setValue(token, forHTTPHeaderField: "X-CSRF-Token")
+                request.setValue(pairing.token, forHTTPHeaderField: "X-CSRF-Token")
                 request.setValue("court-watch/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
 
-                let (data, _) = try await transport.send(request)
+                let (data, _) = try await pairing.transport.send(request)
 
                 let envelope: ProbeEnvelope
                 do {

@@ -185,19 +185,30 @@ nonisolated struct AvailabilityClient: Sendable {
         var replayedAnonymously = false
 
         while true {
-            let token = try await session.token()
-            let transport = await session.currentTransport()
+            // One call, so the token and the jar cannot come from either side
+            // of an interleaved invalidation. Asking for them separately left
+            // a suspension point between the two in which a concurrent sign
+            // out sent the old token with the new cookies.
+            //
+            // After an expiry the rotation is folded into the same call rather
+            // than done as a separate invalidate followed by a fetch, which
+            // reopens the gap this closes — the session offers the combined
+            // form precisely so a retry does not have to spell it as two.
+            let pairing =
+                reHandshaked
+                ? try await session.renewedPairing()
+                : try await session.pairing()
 
             var request = URLRequest(url: Self.endpoint)
             request.httpMethod = "POST"
             request.httpBody = payload
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue(token, forHTTPHeaderField: "X-CSRF-Token")
+            request.setValue(pairing.token, forHTTPHeaderField: "X-CSRF-Token")
             request.setValue("court-watch/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
 
             // Sent through the transport the session currently owns, so the
             // token always travels with the cookies it was minted against.
-            let (data, _) = try await transport.send(request)
+            let (data, _) = try await pairing.transport.send(request)
 
             let envelope: AvailabilityEnvelope
             do {
@@ -239,11 +250,10 @@ nonisolated struct AvailabilityClient: Sendable {
                     throw APIError.sessionExpired(code: code)
                 }
 
+                // Rotating the pairing is now the first thing the next turn of
+                // the loop does, as one call, rather than being done here and
+                // fetched separately a moment later.
                 reHandshaked = true
-
-                // Discards the token *and* its cookie jar. Retrying without
-                // this returns the same code forever.
-                await session.invalidate()
 
             case .service(let code, let message):
                 // 1507 and friends mean the request was wrong, not the session.
