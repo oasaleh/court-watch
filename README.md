@@ -124,6 +124,10 @@ silent rather than loud:
 Booking a court, days other than today, notifications, and non-tennis facilities.
 The website already books; this app answers whether it's worth opening.
 
+## Licence
+
+MIT — see [LICENSE](LICENSE).
+
 ## Note
 
 Unofficial, personal, and not affiliated with The Woodlands Township or
