@@ -185,9 +185,6 @@ struct GridFormattingTests {
         let slots = try publishedSlots.map { try slot($0) }
         let cellWidth = StripLayout.cellWidth(availableWidth: 330, slotCount: slots.count)
 
-        let normal = HourRuler.labels(
-            for: slots, cellWidth: cellWidth, dynamicTypeSize: .large
-        ).compactMap { $0 }
         let large = HourRuler.labels(
             for: slots, cellWidth: cellWidth, dynamicTypeSize: .xxxLarge
         ).compactMap { $0 }
@@ -196,12 +193,17 @@ struct GridFormattingTests {
         // widths a stride of 4 and a stride of 5 both yield four labels across
         // sixteen slots, so counting would report no change while the spacing
         // had in fact widened.
+        //
+        // The labels at the default size were being computed here too and never
+        // looked at, which the compiler said out loud. Only the larger set is
+        // read, and only to check the times survive the thinning.
         let normalStride = HourRuler.labelStride(
             cellWidth: cellWidth, dynamicTypeSize: .large)
         let largeStride = HourRuler.labelStride(
             cellWidth: cellWidth, dynamicTypeSize: .xxxLarge)
 
         #expect(largeStride > normalStride, "\(normalStride) -> \(largeStride)")
+        #expect(large.isEmpty == false)
         #expect(large.allSatisfy { $0.contains("AM") || $0.contains("PM") })
     }
 
@@ -313,35 +315,28 @@ struct GridFormattingTests {
     @Test("The status line is just the refresh time when nothing is filtered")
     func rendersUnfilteredStatusLine() throws {
         #expect(
-            try StatusLineText.line(filter: .fromNow, fetchedAt: referenceInstant())
+            try StatusLineText.line(fetchedAt: referenceInstant())
                 == "Updated 2:00 PM")
     }
 
     /// The active filter is named in the toolbar control that sets it, not
     /// repeated here. Saying it in both places put the same sentence twice on
     /// one screen.
-    @Test("The status line is the refresh time whether or not a filter is set")
-    func rendersFilteredStatusLine() throws {
-        let line = try StatusLineText.line(
-            filter: StartTimeFilter(start: try slot("18:00:00")),
-            fetchedAt: referenceInstant())
-
-        #expect(line == "Updated 2:00 PM")
-        #expect(line.contains("18:00") == false)
-        #expect(line.contains("14:00") == false)
-    }
-
-    /// Whatever the filter, the line stays twelve-hour and says only how old the
-    /// data is — the one thing that cannot be read anywhere else on screen.
-    @Test("Every offered filter leaves the status line reading only the refresh time")
-    func statusLineNamesEveryFilter() throws {
+    ///
+    /// Stated as "no filter's label appears in the line" rather than by passing
+    /// a filter in, because the line no longer takes one. The old form looped
+    /// over every choice asserting the same constant, which a signature that
+    /// ignored the argument satisfied without doing anything.
+    @Test("No filter label reaches the status line")
+    func statusLineNamesNoFilter() throws {
         let reference = try referenceInstant()
         let slots = try publishedSlots.map { try slot($0) }
+        let line = StatusLineText.line(fetchedAt: reference)
+
+        #expect(line == "Updated 2:00 PM")
 
         for choice in StartTimeFilter.choices(for: slots) {
-            let line = StatusLineText.line(filter: choice, fetchedAt: reference)
-
-            #expect(line == "Updated 2:00 PM", "\(choice.label)")
+            #expect(line.contains(choice.label) == false, "\(choice.label)")
         }
     }
 
@@ -355,11 +350,11 @@ struct GridFormattingTests {
         let reference = try referenceInstant()
 
         #expect(
-            StatusLineText.line(filter: .fromNow, fetchedAt: reference, failure: nil)
+            StatusLineText.line(fetchedAt: reference, failure: nil)
                 == "Updated 2:00 PM")
         #expect(
-            StatusLineText.line(filter: .fromNow, fetchedAt: reference, failure: nil)
-                == StatusLineText.line(filter: .fromNow, fetchedAt: reference))
+            StatusLineText.line(fetchedAt: reference, failure: nil)
+                == StatusLineText.line(fetchedAt: reference))
     }
 
     /// The old signal that a refresh had not worked was a timestamp that did
@@ -370,7 +365,6 @@ struct GridFormattingTests {
     @Test("A failed refresh names the failure and keeps the original time")
     func statusLineNamesAFailedRefresh() throws {
         let line = try StatusLineText.line(
-            filter: .fromNow,
             fetchedAt: referenceInstant(),
             failure: .transport(.notConnectedToInternet))
 
@@ -386,11 +380,11 @@ struct GridFormattingTests {
         let reference = try referenceInstant()
 
         let offline = StatusLineText.line(
-            filter: .fromNow, fetchedAt: reference, failure: .transport(.notConnectedToInternet))
+            fetchedAt: reference, failure: .transport(.notConnectedToInternet))
         let farEnd = StatusLineText.line(
-            filter: .fromNow, fetchedAt: reference, failure: .transport(.timedOut))
+            fetchedAt: reference, failure: .transport(.timedOut))
         let refused = StatusLineText.line(
-            filter: .fromNow, fetchedAt: reference,
+            fetchedAt: reference,
             failure: .service(code: "1507", message: "Invalid request"))
 
         #expect(offline != farEnd)
@@ -410,7 +404,7 @@ struct GridFormattingTests {
         let reference = try referenceInstant()
 
         for error in ErrorPresentationCases.all {
-            let line = StatusLineText.line(filter: .fromNow, fetchedAt: reference, failure: error)
+            let line = StatusLineText.line(fetchedAt: reference, failure: error)
 
             #expect(line.hasPrefix(ErrorPresentation.of(error).title), "\(line)")
         }
@@ -421,7 +415,7 @@ struct GridFormattingTests {
     @Test("A failed-refresh line is still a twelve-hour time")
     func failedRefreshLineIsTwelveHour() throws {
         let line = try StatusLineText.line(
-            filter: .fromNow, fetchedAt: referenceInstant(), failure: .transport(.timedOut))
+            fetchedAt: referenceInstant(), failure: .transport(.timedOut))
 
         #expect(line.contains("2:00 PM"))
         #expect(line.contains("PM"))
@@ -438,9 +432,9 @@ struct GridFormattingTests {
         let failure = APIError.transport(.notConnectedToInternet)
 
         let unfiltered = StatusLineText.line(
-            filter: .fromNow, fetchedAt: reference, failure: failure)
+            fetchedAt: reference, failure: failure)
         let filtered = StatusLineText.line(
-            filter: StartTimeFilter(start: try slot("18:00:00")), fetchedAt: reference,
+            fetchedAt: reference,
             failure: failure)
 
         #expect(unfiltered == filtered)
@@ -455,7 +449,7 @@ struct GridFormattingTests {
         let reference = try referenceInstant()
 
         for error in ErrorPresentationCases.all {
-            let line = StatusLineText.line(filter: .fromNow, fetchedAt: reference, failure: error)
+            let line = StatusLineText.line(fetchedAt: reference, failure: error)
 
             // No doubled or dangling punctuation, and nothing left hanging at
             // either end.
@@ -476,13 +470,13 @@ struct GridFormattingTests {
 
         let lines = [
             StatusLineText.line(
-                filter: .fromNow, fetchedAt: reference,
+            fetchedAt: reference,
                 failure: .decoding("keyNotFound(CodingKeys(stringValue: \"response_code\"))")),
             StatusLineText.line(
-                filter: .fromNow, fetchedAt: reference,
+            fetchedAt: reference,
                 failure: .service(code: "1507", message: "Invalid request")),
             StatusLineText.line(
-                filter: .fromNow, fetchedAt: reference, failure: .sessionExpired(code: "0012")),
+            fetchedAt: reference, failure: .sessionExpired(code: "0012")),
         ]
 
         for line in lines {

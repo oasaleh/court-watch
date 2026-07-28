@@ -57,9 +57,12 @@ nonisolated enum StatusLineText {
     ///
     /// Joined with a full stop rather than a separator glyph, because VoiceOver
     /// reads this as one announcement and a middle dot is not a word.
-    static func line(
-        filter: StartTimeFilter, fetchedAt: Date, failure: APIError? = nil
-    ) -> String {
+    ///
+    /// The filter is deliberately absent. It used to be named here, and is now
+    /// named by the toolbar instead — putting it in both places meant two
+    /// controls describing one state, and the line's job is the one thing
+    /// nothing else on screen can say: when this data arrived.
+    static func line(fetchedAt: Date, failure: APIError? = nil) -> String {
         let updated = LastRefreshedText.line(at: fetchedAt)
 
         guard let failure else { return updated }
@@ -315,8 +318,7 @@ struct ContentView: View {
         lastFailure: APIError?
     ) -> some View {
         let facilities = availability.facilities
-        let statusLine = StatusLineText.line(
-            filter: filter, fetchedAt: fetchedAt, failure: lastFailure)
+        let statusLine = StatusLineText.line(fetchedAt: fetchedAt, failure: lastFailure)
 
         // A failure pins the line; the countdown belongs to the success case.
         //
@@ -407,7 +409,7 @@ struct ContentView: View {
                 Menu {
                     ForEach(StartTimeFilter.choices(for: availability.slotTimes)) { choice in
                         Button {
-                            apply(choice, over: availability, heldWindow: heldWindow)
+                            apply(choice)
                         } label: {
                             if choice == filter {
                                 Label(choice.label, systemImage: "checkmark")
@@ -454,21 +456,16 @@ struct ContentView: View {
         }
     }
 
-    /// Changes the filter, and fetches only if the data in hand cannot answer it.
-    ///
-    /// Narrowing, or widening while the whole day is still held, is served
-    /// locally and costs nothing. Widening past what a windowed refresh left
-    /// behind is the one case that must go back to the server — and the answer
-    /// is computed by `covers`, never guessed.
     /// Changes the filter. Never fetches.
     ///
     /// The whole day is always held, so every filter — narrower or wider — is a
     /// subset of data already in hand. Instant, free, works offline, and costs
     /// the WAF-fronted host nothing.
-    private func apply(
-        _ choice: StartTimeFilter, over availability: Availability,
-        heldWindow: RequestedWindow?
-    ) {
+    ///
+    /// It kept the availability and the held window as parameters back when it
+    /// had to decide whether the data could answer the new filter. Holding the
+    /// day unconditionally removed the decision, and the parameters with it.
+    private func apply(_ choice: StartTimeFilter) {
         filter = choice
     }
 
