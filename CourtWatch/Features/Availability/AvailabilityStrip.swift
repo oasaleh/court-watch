@@ -20,6 +20,32 @@
 
 import SwiftUI
 
+/// One court's open-hour count, as text.
+///
+/// Its own type, and tested, for the reason the ambiguity it fixes survived
+/// this long: it used to be a private computed property on a view, so no test
+/// could see it, and the only place it is ever drawn is the largest
+/// accessibility text sizes — a screen nobody looks at until they go looking.
+nonisolated enum OpenHoursText {
+
+    /// "7 of 16 hours free", or "Nothing free".
+    ///
+    /// The unit is named, and that is the whole point of the function. This
+    /// line is drawn directly beneath the facility's own, which counts *courts*
+    /// in the identical shape — "11 of 11 free" over "7 of 16 free", one about
+    /// places and one about times, with nothing on screen to say they had
+    /// changed subject. Saying "hours" costs a word and removes the collision.
+    ///
+    /// Both numbers are written with plain interpolation: the numeric
+    /// convenience call is matched by the date-handling guard and fails the
+    /// build.
+    static func line(open: Int, total: Int) -> String {
+        guard open > 0 else { return "Nothing free" }
+
+        return "\(open) of \(total) hours free"
+    }
+}
+
 struct AvailabilityStrip: View {
 
     let court: Court
@@ -121,9 +147,7 @@ struct AvailabilityStrip: View {
     /// Plain interpolation, never the numeric convenience call: that call is
     /// matched by the date-handling guard and fails the build.
     private var openCountLine: String {
-        openSlots.isEmpty
-            ? "Nothing free"
-            : "\(openSlots.count) of \(slots.count) free"
+        OpenHoursText.line(open: openSlots.count, total: slots.count)
     }
 
     /// The hours this court is free.

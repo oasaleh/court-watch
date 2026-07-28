@@ -340,8 +340,42 @@ struct GridFormattingTests {
         }
     }
 
-    // MARK: - A refresh that failed over data that is still usable
+    // MARK: - The court's own open-hour count, at the largest text sizes
 
+    /// The unit is named because the facility's line above counts something
+    /// else in the same shape. Asserting the exact string is the assertion:
+    /// "7 of 16 free" is what the collision looked like.
+    @Test("A court's open-hour count names its unit")
+    func rendersOpenHoursLine() {
+        #expect(OpenHoursText.line(open: 7, total: 16) == "7 of 16 hours free")
+    }
+
+    /// A court with nothing left says so rather than counting to zero.
+    @Test("A fully booked court says nothing is free")
+    func rendersNoOpenHours() {
+        #expect(OpenHoursText.line(open: 0, total: 16) == "Nothing free")
+    }
+
+    /// The two lines sit one above the other at accessibility text sizes, and
+    /// this is the pair that used to be indistinguishable. Asserted together so
+    /// that making one of them ambiguous again fails here rather than on a
+    /// screen nobody visits.
+    @Test("The court line and the facility line cannot be confused")
+    func courtAndFacilityLinesReadDifferently() throws {
+        let facility = AvailabilitySummaryText.line(
+            for: FacilitySummary(
+                slot: try slot("07:00:00"), freeCourts: 11, totalCourts: 11,
+                startsLater: false))
+        let court = OpenHoursText.line(open: 11, total: 11)
+
+        // Same numbers on purpose: if the wording alone does not tell them
+        // apart, nothing does.
+        #expect(facility != court)
+        #expect(court.contains("hours"))
+        #expect(facility.contains("hours") == false)
+    }
+
+    // MARK: - A refresh that failed over data that is still usable
     /// The most likely regression in this area is a stray separator on a line
     /// that is on screen every second the app is open, so the no-failure case is
     /// asserted character for character against what it read before.
