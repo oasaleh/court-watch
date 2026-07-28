@@ -18,7 +18,10 @@ hours that have already ended, which would make most of these two cells wide.
 
 Every court at your chosen facilities, all sixteen hours, no horizontal
 scrolling. The header answers the question before you read a single cell:
-**2 of 5 free at 7 AM**.
+**2 of 5 free** when the place is open at the hour you are looking at, and
+**Next free at 10 PM · 2 of 5** when it is not. The time is named only when it
+differs from the leading column, so the line can never be mistaken for a filter
+that was ignored.
 
 Green is open, red is taken. The hour ruler labels every few columns — the stride
 is computed from the measured cell width, so raising the text size thins the
