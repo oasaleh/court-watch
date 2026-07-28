@@ -37,7 +37,7 @@ until ten.
 
 ```bash
 ./Scripts/build.sh      # build for the simulator
-./Scripts/test.sh       # 465 tests, iPhone and iPad
+./Scripts/test.sh       # 473 tests, iPhone and iPad
 ```
 
 Neither needs an Apple Developer account: a simulator build is unsigned, so a
@@ -108,7 +108,7 @@ across 1,280 slots** between a signed-in capture and an anonymous one.
 
 ## Correctness
 
-465 tests, and a few conventions that exist because the failures they prevent are
+473 tests, and a few conventions that exist because the failures they prevent are
 silent rather than loud:
 
 - **All date handling lives in one file.** `check-time-discipline.sh` fails the
