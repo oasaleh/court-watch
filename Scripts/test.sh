@@ -59,10 +59,14 @@ for i in "${!UDIDS[@]}"; do
   echo "=== $label — $udid on $SIM_RUNTIME ==="
 
   set +e
+  # The UI tests are held out of this run. They drive a launched app against
+  # the real endpoint, so they are neither hermetic nor quick, and this suite
+  # is both by design. Scripts/test-accessibility.sh runs them on purpose.
   xcodebuild test \
     -project "$CW_PROJECT" \
     -scheme "$CW_SCHEME" \
     -destination "id=$udid" \
+    -skip-testing:CourtWatchUITests \
     "$@" 2>&1 | tee "$log"
   rc=${PIPESTATUS[0]}
   set -e
