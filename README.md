@@ -7,9 +7,13 @@ Finding an open court means signing into a website, picking a facility, reading 
 grid, and going back for the next one. This app collapses that into opening it
 and looking.
 
-![Court Watch](docs/screenshots/day-now-dark.png)
+| Light | Dark |
+|---|---|
+| ![The day, light](docs/screenshots/day-now-light.png) | ![The evening, dark](docs/screenshots/evening-dark.png) |
 
-More screens in **[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)**.
+Left: the whole day at three of the facilities you follow. Right: the same
+screen at 8 PM, when only three hours are left and everything nearby is booked
+until ten.
 
 ## What it does
 
@@ -33,7 +37,7 @@ More screens in **[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)**.
 
 ```bash
 ./Scripts/build.sh      # build for the simulator
-./Scripts/test.sh       # 462 tests, iPhone and iPad
+./Scripts/test.sh       # 465 tests, iPhone and iPad
 ```
 
 The scripts set `DEVELOPER_DIR` themselves and resolve a simulator by UDID rather
@@ -89,7 +93,7 @@ across 1,280 slots** between a signed-in capture and an anonymous one.
 
 ## Correctness
 
-462 tests, and a few conventions that exist because the failures they prevent are
+465 tests, and a few conventions that exist because the failures they prevent are
 silent rather than loud:
 
 - **All date handling lives in one file.** `check-time-discipline.sh` fails the
