@@ -85,6 +85,27 @@ nonisolated enum APIError: Error, Equatable, Sendable {
     case signedInWithoutAccount
 }
 
+extension APIError {
+
+    /// True when this is the app cancelling its own work rather than anything
+    /// going wrong.
+    ///
+    /// `URLSession` reports a cancelled request as an ordinary transport
+    /// failure, and the classifier that turns those into sentences has a
+    /// deliberate catch-all arm — so without this a cancellation reads as "the
+    /// Township's server didn't respond". Signing in mid-refresh cancels the
+    /// load in flight, which meant a routine action produced a server-outage
+    /// notice that then stayed on screen.
+    ///
+    /// A predicate here rather than an arm in the classifier because the two
+    /// answer different questions. The classifier says what a failure *was*;
+    /// this says whether there was one. Cancellation is not a failure to
+    /// describe, and giving it a description is what created the bug.
+    var isCancellation: Bool {
+        self == .transport(.cancelled)
+    }
+}
+
 nonisolated enum ResponseCode {
 
     /// The only code that means success.

@@ -524,6 +524,18 @@ struct ContentView: View {
             // here, retryable, and blaming nothing the user controls.
             let failure = error as? APIError ?? .transport(.unknown)
 
+            // Except a cancellation, which is this view superseding its own
+            // work. `.task(id:)` cancels and restarts on every identity change,
+            // so signing in or out during a refresh lands here — and a
+            // replacement load is already running. Reporting it would put a
+            // server-outage notice on screen for a routine action, and it would
+            // stay there, because the status line persists while a failure is
+            // recorded.
+            //
+            // Returning before the state is touched leaves the previous data
+            // and timestamp exactly as they were, for the new load to replace.
+            if failure.isCancellation || error is CancellationError { return }
+
             // A refresh that fails keeps the last good data *and its original
             // timestamp* on screen. Replacing a working grid with an error is
             // the more common implementation and the wrong one: the user can

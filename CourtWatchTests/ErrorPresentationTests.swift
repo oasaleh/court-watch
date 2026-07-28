@@ -432,4 +432,50 @@ struct ErrorPresentationTests {
             #expect(presentation.message.isEmpty == false, "\(error)")
         }
     }
+
+    // MARK: - Cancellation is not a failure
+
+    /// A cancelled request is the app superseding its own work, and the view
+    /// returns before recording it. This pins the predicate that decision rests
+    /// on.
+    ///
+    /// The case it exists for: `.task(id: account.identity)` restarts on every
+    /// identity change, so signing in during a refresh cancels the load in
+    /// flight. Without this, that routine action put a server-outage notice on
+    /// screen and left it there.
+    @Test("A cancelled request is recognised as cancellation")
+    func recognisesCancellation() {
+        #expect(APIError.transport(.cancelled).isCancellation)
+    }
+
+    /// The other half, and the one that would catch an over-broad predicate:
+    /// every genuine failure must still be reported. A cancellation check that
+    /// swallowed real outages would be the worse bug of the two, because the
+    /// app would then show stale courts and say nothing.
+    @Test(
+        "No genuine failure is mistaken for a cancellation",
+        arguments: [
+            APIError.transport(.timedOut),
+            .transport(.notConnectedToInternet),
+            .transport(.networkConnectionLost),
+            .transport(.unknown),
+            .http(503),
+            .notJSON,
+            .decoding("unexpected shape"),
+            .service(code: "1507", message: nil),
+            .sessionExpired(code: "0012"),
+            .slotTimesMissing,
+        ])
+    func doesNotMistakeFailuresForCancellation(error: APIError) {
+        #expect(error.isCancellation == false)
+    }
+
+    /// And the reason the predicate has to exist at all: the classifier's
+    /// catch-all arm turns a cancellation into "the far end didn't answer".
+    /// That arm is deliberate and correct — which is exactly why cancellation
+    /// has to be taken out before it gets there rather than added to it.
+    @Test("Cancellation would otherwise read as a server outage")
+    func cancellationWouldOtherwiseLookLikeAnOutage() {
+        #expect(NetworkFailureKind.of(.cancelled) == .farEnd)
+    }
 }
