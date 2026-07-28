@@ -301,6 +301,83 @@ struct DefensiveDecodingTests {
                 == [.available, .unpublished, .booked, .unpublished, .available, .booked])
     }
 
+    // MARK: - The same guarantee on the other axis
+
+    /// The mirror of the tests above, and the one the file's own preamble
+    /// promises without ever having checked.
+    ///
+    /// Position is what connects a status to an hour, and the pairing can be
+    /// broken from either side. Every test above corrupts a *status* and
+    /// asserts the hours held. This corrupts an *hour* and asserts the statuses
+    /// hold, because deleting an unreadable slot time and closing the gap
+    /// slides every later status one hour earlier just as surely — with the
+    /// difference that it does so for all eighty courts at once, since the
+    /// slot-time list is shared.
+    ///
+    /// The corruption is in the middle, where a shift is visible, and the
+    /// statuses either side of it are opposites so that a shift cannot be
+    /// mistaken for a coincidence.
+    @Test("An unreadable slot time costs its own hour and relabels no other")
+    func unreadableSlotTimeKeepsTheRowAligned() throws {
+        let data = try decode(
+            envelope(
+                slots: ["07:00:00", "08:00:00", "not a time", "10:00:00", "11:00:00"],
+                resources: [resource(details: ["1", "1", "1", "0", "0"])]))
+
+        let court = try #require(data.courts.first)
+
+        // The unreadable hour takes itself out and nothing else with it.
+        #expect(try hours(of: data, id: 1) == [7, 8, 10, 11])
+
+        // 10 and 11 were published free and must still read free. A decoder
+        // that closed the gap would pair 10 with the third status — booked —
+        // and report the court taken at an hour it is open.
+        let free = court.slots.filter { $0.status == .available }.map(\.time.hour)
+        #expect(free == [10, 11], "a shifted row would report 8 and 10")
+
+        #expect(court.slots.map(\.status) == [.booked, .booked, .available, .available])
+
+        // The other direction, because this is the sentence that matters: the
+        // app must not claim a court is taken when it is free.
+        let ten = try #require(court.slots.first { $0.time.hour == 10 })
+        #expect(ten.status == .available)
+    }
+
+    /// The same, corrupted at the front, where a shift moves every hour left.
+    @Test("An unreadable first slot time does not pull the row forward")
+    func unreadableFirstSlotTimeHoldsTheRest() throws {
+        let data = try decode(
+            envelope(
+                slots: ["nonsense", "08:00:00", "09:00:00", "10:00:00"],
+                resources: [resource(details: ["0", "1", "1", "0"])]))
+
+        let court = try #require(data.courts.first)
+
+        #expect(try hours(of: data, id: 1) == [8, 9, 10])
+        #expect(court.slots.map(\.status) == [.booked, .booked, .available])
+
+        let free = court.slots.filter { $0.status == .available }.map(\.time.hour)
+        #expect(free == [10], "a shifted row would report 8")
+    }
+
+    /// A bad hour and a bad status in the same row, each costing only itself.
+    @Test("A bad hour and a bad status do not compound")
+    func unreadableTimeAndStatusTogether() throws {
+        let data = try decode(
+            envelope(
+                slots: ["07:00:00", "bogus", "09:00:00", "10:00:00", "11:00:00"],
+                resources: [resource(details: ["0", "1", "null", "1", "0"])]))
+
+        let court = try #require(data.courts.first)
+
+        #expect(try hours(of: data, id: 1) == [7, 9, 10, 11])
+        #expect(
+            court.slots.map(\.status) == [.available, .unpublished, .booked, .available])
+
+        let free = court.slots.filter { $0.status == .available }.map(\.time.hour)
+        #expect(free == [7, 11])
+    }
+
     // MARK: - An unreadable resource is dropped, and counted
 
     /// Resources are independent of one another, so an unidentifiable one is

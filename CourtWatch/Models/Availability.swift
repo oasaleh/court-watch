@@ -114,10 +114,21 @@ nonisolated struct Availability: Sendable {
     init(envelope: AvailabilityEnvelope) {
         let wire = envelope.body.availability
 
-        // Spelled as an explicit closure rather than `compactMap(SlotTime.init)`.
+        // Parsed with `map` rather than `compactMap`, keeping the failures as
+        // nil, because `time_slots` is the other half of the same positional
+        // pairing `time_slot_details` is so careful about.
+        //
+        // Compacting here would delete an unreadable hour and close the gap,
+        // and the zip below would then hand every later status to the hour
+        // before its own — the exact shift the detail decoding exists to
+        // prevent, arriving from the opposite side and costing every court at
+        // once rather than one, since this list is shared by all of them.
+        //
+        // Spelled as an explicit closure rather than `map(SlotTime.init)`.
         // This runs off the main actor, where an unapplied reference to a
         // main-actor-isolated initializer does not convert.
-        let times = wire.timeSlots.compactMap { SlotTime(apiString: $0) }
+        let parsedTimes = wire.timeSlots.map { SlotTime(apiString: $0) }
+        let times = parsedTimes.compactMap { $0 }
 
         var courts: [Court] = []
         var degraded: [String] = []
@@ -128,18 +139,26 @@ nonisolated struct Availability: Sendable {
             // mismatch is recorded rather than thrown: one malformed resource
             // must not cost the user the other seventy-nine.
             //
+            // Zipped against the *uncompacted* times so that index i always
+            // means the same hour on both sides. An unreadable hour then drops
+            // its own status along with itself, which is the only way to lose
+            // it without moving anything else.
+            //
             // A detail whose status could not be read still arrives here, in
             // its own place, carrying no value — so it becomes an hour the app
             // says nothing about rather than a hole that pulls the rest of the
             // row forward. That placeholder is the whole reason the wire type
             // decodes the field as an optional.
-            let slots = zip(times, resource.timeSlotDetails).map { time, detail in
-                CourtSlot(
-                    time: time,
-                    status: detail.status.map { raw in SlotStatus(rawStatus: raw) }
-                        ?? .unpublished
-                )
-            }
+            let slots = zip(parsedTimes, resource.timeSlotDetails)
+                .compactMap { time, detail -> CourtSlot? in
+                    guard let time else { return nil }
+
+                    return CourtSlot(
+                        time: time,
+                        status: detail.status.map { raw in SlotStatus(rawStatus: raw) }
+                            ?? .unpublished
+                    )
+                }
 
             if resource.timeSlotDetails.count != times.count {
                 degraded.append(resource.resourceName)
