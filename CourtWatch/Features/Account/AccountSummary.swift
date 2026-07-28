@@ -11,9 +11,11 @@
 //  refused — and several of them happen without the user doing anything. A
 //  symbol alone would leave them guessing which of the two states they are in.
 //
-//  Signing out is styled as destructive and asks for confirmation, because it
-//  discards the saved sign-in, and re-entering it is precisely the moment a
-//  typo costs something on the user's real account.
+//  Signing out is styled as destructive but is not confirmed. The stakes are
+//  the saved password, and the cost of losing it is typing it again — against
+//  an optional feature that changes nothing the app displays. A dialog in
+//  front of a one-tap action the user just deliberately reached for, two
+//  screens deep, asks them to answer a question they have already answered.
 //
 
 import SwiftUI
