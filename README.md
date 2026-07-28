@@ -40,6 +40,21 @@ until ten.
 ./Scripts/test.sh       # 465 tests, iPhone and iPad
 ```
 
+Neither needs an Apple Developer account: a simulator build is unsigned, so a
+fresh clone builds and tests with no setup at all.
+
+To run it on a physical iPhone, sign it with your own team:
+
+```bash
+cp Config/Local.xcconfig.example Config/Local.xcconfig
+# then put your ten-character team id in it
+```
+
+That file is gitignored. It exists so that signing never touches a tracked
+file — Xcode writes `DEVELOPMENT_TEAM` into the project the moment you build
+to a device, and a team id committed by one person is of no use to anyone
+else and has to be removed before they can build at all.
+
 The scripts set `DEVELOPER_DIR` themselves and resolve a simulator by UDID rather
 than by name — several simulators share the name *iPhone 17 Pro*, and picking by
 name silently targets an arbitrary one.
