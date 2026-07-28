@@ -37,6 +37,17 @@ nonisolated struct FacilitySummary: Hashable, Sendable {
     /// two is a quiet court and two out of eleven is a busy one, and the bare
     /// count cannot tell them apart.
     let totalCourts: Int
+
+    /// True when `slot` is not the first hour on screen — the facility is
+    /// booked solid at the hour the user asked about and this is the next one
+    /// that isn't.
+    ///
+    /// Decided here rather than by the view, because only the day knows which
+    /// slot leads the grid. A view handed the summary and the slot list
+    /// separately could pair a summary with the wrong list; a view handed this
+    /// cannot. It is the difference between a header that reads as an answer
+    /// to the question asked and one that looks like the filter was ignored.
+    let startsLater: Bool
 }
 
 nonisolated struct VisibleDay: Sendable, Equatable {
@@ -159,7 +170,7 @@ nonisolated struct VisibleDay: Sendable, Equatable {
     ///
     /// Neither an unrecognised status nor an unpublished hour is counted as
     /// free. That is D6 reaching the summary as well as the cells — a header
-    /// promising "3 free at 6 PM" on the strength of three hours the app knows
+    /// promising "next free at 6 PM" on the strength of three hours the app knows
     /// nothing about would be the same wrong answer, phrased more confidently.
     func summary(for facility: Facility) -> FacilitySummary? {
         for (index, slot) in slots.enumerated() {
@@ -183,7 +194,11 @@ nonisolated struct VisibleDay: Sendable, Equatable {
 
             if free > 0 {
                 return FacilitySummary(
-                    slot: slot, freeCourts: free, totalCourts: facility.courts.count)
+                    slot: slot,
+                    freeCourts: free,
+                    totalCourts: facility.courts.count,
+                    startsLater: index > 0
+                )
             }
         }
 

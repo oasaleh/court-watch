@@ -549,6 +549,56 @@ struct VisibleDayTests {
         // 8:00 is the earliest slot anyone is free, and exactly one court is.
         #expect(summary.slot.displayString == "8 AM")
         #expect(summary.freeCourts == 1)
+
+        // 7:00 leads the grid and nobody is free then, so the header has to
+        // name 8 AM rather than let the count read as an answer about 7.
+        #expect(summary.startsLater)
+    }
+
+    /// The other half of the flag, and the reason it is stored rather than
+    /// derived by the view: free at the leading hour is the common case, and a
+    /// header that named a time there was what made the uncommon case
+    /// ambiguous.
+    @Test("A facility free at the first visible slot is not marked as later")
+    func doesNotMarkAnImmediateOpeningAsLater() throws {
+        let clock = FixedClock(now: try central(hour: 6))
+        let data = try availability(
+            slots: ["07:00:00", "08:00:00"],
+            courts: [(id: 1, name: "Some Tennis 1", statuses: [0, 1])]
+        )
+        let facility = try #require(data.facilities.first)
+
+        let summary = try #require(
+            VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
+                .summary(for: facility))
+
+        #expect(summary.slot.displayString == "7 AM")
+        #expect(summary.startsLater == false)
+    }
+
+    /// The flag is measured against what is *on screen*, not against now. A
+    /// user who asks for 8 AM and gets 8 AM has been answered exactly, even
+    /// though 7 AM exists in the payload and is booked.
+    @Test("A filtered day measures later against the filter, not the whole day")
+    func measuresLaterAgainstTheVisibleDay() throws {
+        let clock = FixedClock(now: try central(hour: 6))
+        let data = try availability(
+            slots: ["07:00:00", "08:00:00"],
+            courts: [(id: 1, name: "Some Tennis 1", statuses: [1, 0])]
+        )
+        let facility = try #require(data.facilities.first)
+
+        let unfiltered = try #require(
+            VisibleDay.resolve(availability: data, now: clock.now, startingAt: nil)
+                .summary(for: facility))
+        let filtered = try #require(
+            VisibleDay.resolve(
+                availability: data, now: clock.now, startingAt: try slot("08:00:00")
+            ).summary(for: facility))
+
+        #expect(unfiltered.slot == filtered.slot)
+        #expect(unfiltered.startsLater)
+        #expect(filtered.startsLater == false)
     }
 
     @Test("The summary counts every court free at that slot")
@@ -611,7 +661,7 @@ struct VisibleDayTests {
         #expect(day.summary(for: facility) == nil)
     }
 
-    /// Nor is a padded hour. A header promising "1 of 1 free at 8 AM" on the
+    /// Nor is a padded hour. A header promising "next free at 8 AM" on the
     /// strength of an hour the payload never mentioned would be the same wrong
     /// answer, phrased more confidently.
     @Test("A padded hour does not count as a free court")

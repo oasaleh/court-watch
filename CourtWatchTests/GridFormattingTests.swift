@@ -102,9 +102,22 @@ struct GridFormattingTests {
     @Test("The summary line names the count, the total and a twelve-hour time")
     func rendersSummaryLine() throws {
         let summary = FacilitySummary(
-            slot: try slot("18:00:00"), freeCourts: 4, totalCourts: 5)
+            slot: try slot("18:00:00"), freeCourts: 4, totalCourts: 5, startsLater: false)
 
-        #expect(AvailabilitySummaryText.line(for: summary) == "4 of 5 free at 6 PM")
+        #expect(AvailabilitySummaryText.line(for: summary) == "4 of 5 free")
+    }
+
+    /// The reported bug, pinned. A user looking at 7 PM onwards read
+    /// "4 of 4 free at 10 PM" as the filter having been ignored — the data was
+    /// right and the sentence was not. When the opening is later than the hour
+    /// on screen the line has to say so out loud rather than naming a time that
+    /// looks like an answer to a question nobody asked.
+    @Test("A later opening leads with the hour it is actually free")
+    func rendersLaterSummaryLine() throws {
+        let summary = FacilitySummary(
+            slot: try slot("22:00:00"), freeCourts: 4, totalCourts: 4, startsLater: true)
+
+        #expect(AvailabilitySummaryText.line(for: summary) == "Next free at 10 PM · 4 of 4")
     }
 
     @Test("A facility with nothing left says so instead of naming a time")
@@ -118,18 +131,18 @@ struct GridFormattingTests {
     @Test("The summary counts are plain digits")
     func rendersSummaryCountPlainly() throws {
         let summary = FacilitySummary(
-            slot: try slot("11:00:00"), freeCourts: 11, totalCourts: 11)
+            slot: try slot("11:00:00"), freeCourts: 11, totalCourts: 11, startsLater: true)
 
-        #expect(AvailabilitySummaryText.line(for: summary) == "11 of 11 free at 11 AM")
+        #expect(AvailabilitySummaryText.line(for: summary) == "Next free at 11 AM · 11 of 11")
     }
 
     /// Every court free reads as such rather than collapsing to a bare count.
     @Test("A wholly free facility still names the total")
     func rendersFullyFreeSummary() throws {
         let summary = FacilitySummary(
-            slot: try slot("07:00:00"), freeCourts: 2, totalCourts: 2)
+            slot: try slot("07:00:00"), freeCourts: 2, totalCourts: 2, startsLater: false)
 
-        #expect(AvailabilitySummaryText.line(for: summary) == "2 of 2 free at 7 AM")
+        #expect(AvailabilitySummaryText.line(for: summary) == "2 of 2 free")
     }
 
     // MARK: - The hour ruler

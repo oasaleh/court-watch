@@ -20,21 +20,37 @@ import SwiftUI
 /// The one derived sentence per facility, as text.
 nonisolated enum AvailabilitySummaryText {
 
-    /// "2 of 5 free at 7 PM", or "Nothing free today".
+    /// "2 of 5 free", "Next free at 10 PM · 2 of 5", or "Nothing free today".
+    ///
+    /// Three sentences rather than one, because one cannot be read. The old
+    /// single form named the time unconditionally — "2 of 5 free at 10 PM" —
+    /// and a user who had just asked to see 7 PM onwards read that as the
+    /// filter having been ignored. It had not been: 7, 8 and 9 PM were booked
+    /// and 10 PM was genuinely the next hour anything opened up. The line was
+    /// true and still gave the wrong impression, which is the same cost as
+    /// being wrong.
+    ///
+    /// So the time is named if and only if it is *not* the hour on screen. When
+    /// the facility is free at the leading hour the count stands alone and is
+    /// about that hour, the one the toolbar names and the ruler puts first;
+    /// when it is not, the line leads with the hour it actually is free, which
+    /// is the fact the user is missing.
     ///
     /// The total is named alongside the count because the count alone cannot be
-    /// read: two free at a two-court place is a quiet evening, two free at Bear
-    /// Branch's eleven is a busy one.
+    /// read either: two free at a two-court place is a quiet evening, two free
+    /// at Bear Branch's eleven is a busy one.
     ///
-    /// One format, always true, never ambiguous about whether "now" means now.
     /// Both numbers are written with plain interpolation: the numeric
     /// convenience call is matched by the date-handling guard and fails the
     /// build.
     static func line(for summary: FacilitySummary?) -> String {
         guard let summary else { return "Nothing free today" }
 
-        return
-            "\(summary.freeCourts) of \(summary.totalCourts) free at \(summary.slot.displayString)"
+        let count = "\(summary.freeCourts) of \(summary.totalCourts)"
+
+        guard summary.startsLater else { return "\(count) free" }
+
+        return "Next free at \(summary.slot.displayString) · \(count)"
     }
 }
 
