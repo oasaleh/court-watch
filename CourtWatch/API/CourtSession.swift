@@ -44,6 +44,23 @@ actor CourtSession {
     /// second caller awaits the first one's result.
     private var handshakeInFlight: Task<String, any Error>?
 
+    /// Which jar the session is on, counted up by every invalidation.
+    ///
+    /// Coalescing stops two callers handshaking at once; it does nothing about
+    /// a handshake that is still suspended when the jar it belongs to is
+    /// thrown away. That task resumes afterwards holding a token minted
+    /// against cookies that no longer exist, and writes it in — pairing a
+    /// token with a foreign jar, which is the one thing this file exists to
+    /// make impossible. The server answers `0012`, which the retry path cannot
+    /// tell from an ordinary expiry, so it re-handshakes against it for as
+    /// long as the app runs.
+    ///
+    /// A counter read before suspending and compared after is enough to answer
+    /// "is this result still mine". Cancellation is not: it is cooperative,
+    /// and a handshake whose response has already arrived finishes regardless,
+    /// because the scrape that follows is synchronous.
+    private var generation = 0
+
     /// Takes a factory rather than a transport, because rotating the token has
     /// to produce a *new* jar. Handing in a single transport would make the
     /// pairing impossible to break correctly.
@@ -91,8 +108,21 @@ actor CourtSession {
         }
         handshakeInFlight = task
 
+        // Read before suspending, compared after. Everything below happens on
+        // the far side of an await, by which time `invalidate` may have run.
+        let mine = generation
+
         do {
             let scraped = try await task.value
+
+            // A result from a retired jar is dropped rather than installed,
+            // and it must not touch the shared state either: clearing the
+            // handle here would throw away the handshake that replaced it and
+            // let a later caller start a third.
+            guard generation == mine else {
+                throw APIError.transport(.cancelled)
+            }
+
             // Clear the handle before returning so the next miss starts a fresh
             // handshake rather than awaiting a completed task.
             handshakeInFlight = nil
@@ -102,7 +132,14 @@ actor CourtSession {
             // Clearing on the failure path too. Leaving a failed task in place
             // would poison the session for the lifetime of the process: every
             // later caller would await it and receive the same old error.
-            handshakeInFlight = nil
+            //
+            // Guarded by the same generation check, and for the same reason: a
+            // failure belonging to a retired jar has no business clearing the
+            // handle of the handshake that superseded it.
+            if generation == mine {
+                handshakeInFlight = nil
+            }
+
             throw error
         }
     }
@@ -116,6 +153,10 @@ actor CourtSession {
         token = nil
         handshakeInFlight?.cancel()
         handshakeInFlight = nil
+
+        // Anything already suspended in `token()` belongs to the jar being
+        // retired here, and will find its generation stale when it resumes.
+        generation &+= 1
 
         let outgoing = transport
         transport = makeTransport()

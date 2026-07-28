@@ -222,6 +222,49 @@ struct SessionHandshakeTests {
         #expect(tokens == [validToken, validToken])
     }
 
+    /// The same window as the test above, but with an invalidation inside it
+    /// rather than a second caller.
+    ///
+    /// A handshake that was in flight when the session was invalidated belongs
+    /// to a jar that no longer exists. Its result must be discarded, because
+    /// installing it pairs a token with the cookies of a different session —
+    /// which the server refuses as `0012`, indistinguishable at the call site
+    /// from an ordinary expiry, so the retry path re-handshakes against it
+    /// forever. This file's own preamble says that pairing is "not
+    /// expressible"; an actor being re-entrant is how it was expressible.
+    @Test("A handshake that outlives its invalidation does not install a token")
+    func lateHandshakeDoesNotInstallAStaleToken() async throws {
+        let released = Gate()
+        let transport = RecordingTransport(
+            responses: [
+                .success(page(token: validToken)),
+                .success(page(token: secondToken)),
+            ],
+            gate: { await released.wait() }
+        )
+        let session = CourtSession { transport }
+
+        // In flight, and held at the response.
+        async let inFlight: String? = try? await session.token()
+        try await Task.sleep(for: .milliseconds(50))
+
+        // The jar this handshake belongs to is discarded while it is suspended.
+        await session.invalidate()
+
+        // Only now does the first response arrive, into a session that has
+        // moved on.
+        await released.open()
+        _ = await inFlight
+
+        // The token from the discarded jar must not be the session's token.
+        // Asking for one has to produce a fresh handshake rather than handing
+        // back something minted against a jar that is gone.
+        let current = try await session.token()
+
+        #expect(current == secondToken, "the token from the retired jar was installed")
+        #expect(transport.requestCount == 2)
+    }
+
     @Test("Invalidating discards the token and fetches a new one")
     func invalidateForcesNewHandshake() async throws {
         let transport = RecordingTransport(responses: [
