@@ -37,7 +37,7 @@ until ten.
 
 ```bash
 ./Scripts/build.sh      # build for the simulator
-./Scripts/test.sh       # 473 tests, iPhone and iPad
+./Scripts/test.sh       # 477 tests, iPhone and iPad
 ```
 
 Neither needs an Apple Developer account: a simulator build is unsigned, so a
@@ -67,6 +67,8 @@ name silently targets an arbitrary one.
 | `check-time-discipline.sh` | Fails if date formatting escapes `CourtTime.swift` |
 | `test-live.sh` | One opt-in call to the real endpoint, checking its shape |
 | `capture-screenshots.sh` | Regenerates `docs/screenshots/` |
+| `capture-checkpoints.sh` | Shoots the accessibility and iPad states for review |
+| `test-accessibility.sh` | Reads the spoken labels off a running screen |
 
 ## How it's put together
 
@@ -108,7 +110,7 @@ across 1,280 slots** between a signed-in capture and an anonymous one.
 
 ## Correctness
 
-473 tests, and a few conventions that exist because the failures they prevent are
+477 tests, and a few conventions that exist because the failures they prevent are
 silent rather than loud:
 
 - **All date handling lives in one file.** `check-time-discipline.sh` fails the
@@ -119,7 +121,8 @@ silent rather than loud:
   genuinely rendered `14:00`, so a run that silently failed to apply the setting
   reports that its premise broke rather than passing vacuously.
 - **Tests are hermetic.** The suite uses mock transports; the one live check is
-  behind `COURTWATCH_LIVE=1`.
+  behind `COURTWATCH_LIVE=1`. The two UI tests that read a rendered screen are
+  held out of it and run from their own script.
 - **A malformed court degrades alone.** One unreadable entry used to throw away
   all 80. Slots are positionally parallel to the published hours, so a bad entry
   becomes a placeholder rather than a deletion — dropping it would shift every
@@ -130,9 +133,10 @@ silent rather than loud:
 - 12-hour times regardless of the device's 24-hour setting
 - With *Differentiate Without Color*, fills give way to solid, outlined and
   hatched treatments plus symbols
-- VoiceOver announces each cell as court, time and availability
+- VoiceOver announces each cell as court, time and availability — checked
+  against a running screen, not just against the strings
 - Dynamic Type through the accessibility sizes; at the largest, the grid becomes
-  a readable list
+  a readable list of the hours each court is free
 
 ## Not in scope
 
