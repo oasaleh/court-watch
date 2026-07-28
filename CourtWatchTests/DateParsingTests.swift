@@ -76,7 +76,10 @@ struct DateParsingTests {
 
         let tokyo = DateFormatter()
         tokyo.locale = CourtTime.posix
-        tokyo.timeZone = try #require(TimeZone(identifier: "Asia/Tokyo"))
+        // Not wrapped in `#require`: `TimeZone(identifier:)` is non-failable
+        // for a literal the compiler can see, and asking to unwrap something
+        // that cannot be nil is noise the macro now says so about.
+        tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")
         tokyo.calendar = CourtTime.calendar
         tokyo.dateFormat = "h:mm a"
 
