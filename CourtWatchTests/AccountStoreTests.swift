@@ -465,6 +465,35 @@ struct AccountStoreTests {
         #expect(account.lastSessionCheck == .anonymous)
     }
 
+    /// Two taps on Sign Out cost one sign-out.
+    ///
+    /// Both ways *in* were guarded against a second attempt while one was
+    /// running; the way out was not. Each one invalidates the session and then
+    /// asks the session check to confirm, so a double-tap meant two handshakes
+    /// and two GETs against the host every other rule here is careful with.
+    ///
+    /// Asserted on the probe and delete counts rather than on the end state:
+    /// signing out twice lands on `.anonymous` either way, so the state says
+    /// nothing about whether the work happened once or twice.
+    @Test("A second sign-out while one is running is refused")
+    func signOutRefusesASecondAttempt() async {
+        let store = StubStore(stored: goodCredentials)
+        let probe = StubProbe(.anonymous)
+        let account = makeStore(
+            store: store, client: StubClient(.signedIn(customerID: 4_471_056)), probe: probe)
+
+        await account.signIn(as: goodCredentials)
+        let checksAfterSignIn = probe.callCount
+
+        async let first: Void = account.signOut()
+        async let second: Void = account.signOut()
+        _ = await (first, second)
+
+        #expect(account.state == .anonymous)
+        #expect(store.deleteCount == 1)
+        #expect(probe.callCount == checksAfterSignIn + 1)
+    }
+
     /// Sign-out works from any state, including one where nothing was stored.
     @Test("Signing out with nothing stored still ends anonymous")
     func signOutFromAnonymousIsSafe() async {

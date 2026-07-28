@@ -184,6 +184,14 @@ final class AccountStore {
     /// Then the session check is asked, so "the cookies are gone" is an
     /// observation rather than an assumption.
     func signOut() async {
+        // Guarded like the two ways in. Without this a second tap while the
+        // first was still running invalidated the session twice and sent two
+        // session checks — two handshakes and two GETs nobody asked for,
+        // against the host the one-attempt rule exists to be careful with. It
+        // also leaves the button disabled for the duration, which is what the
+        // account screen was already reading `isWorking` to decide.
+        guard beginWorking() else { return }
+
         credentialStore.delete()
         hasStoredCredential = false
 
