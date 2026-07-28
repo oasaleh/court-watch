@@ -116,6 +116,14 @@ struct SessionHandshakeTests {
     /// it comes back as `0012`, which the retry path cannot tell apart from a
     /// genuine expiry — so it would re-handshake forever against a bug in the
     /// scrape.
+    ///
+    /// The last candidate is the one that earns the shape check its keep.
+    /// The pattern already demands thirty-six characters of hex-or-dash, so
+    /// everything above it is refused by the pattern and never reaches
+    /// `isWellFormedToken` at all; the only thing that check adds is the
+    /// requirement that a dash be present somewhere. Without a candidate that
+    /// satisfies the pattern and fails that, the whole guard could be deleted
+    /// with the suite still green — which is what was happening.
     @Test(
         "A token that is not UUID-shaped is rejected rather than sent",
         arguments: [
@@ -123,6 +131,7 @@ struct SessionHandshakeTests {
             "370060c852de4fc9a95cb5cfff762b53",
             "zzzzzzzz-52de-4fc9-a95c-b5cfff762b53",
             "",
+            "370060c852de4fc9a95cb5cfff762b53abcd",
         ]
     )
     func rejectsMalformedToken(candidate: String) {
@@ -133,6 +142,33 @@ struct SessionHandshakeTests {
         #expect(throws: APIError.self) {
             try CourtSession.scrapeToken(from: html)
         }
+    }
+
+    /// The shape check on its own, stated so it cannot quietly stop being
+    /// reached again.
+    ///
+    /// Thirty-six hex characters with no dash is a real failure mode rather
+    /// than a contrivance: it is what a scrape returns if the page ever ships
+    /// the token unhyphenated, and it is the one malformed shape the pattern
+    /// happily hands through.
+    @Test("Thirty-six hex characters with no dash is not a token")
+    func rejectsUnhyphenatedToken() throws {
+        let html = """
+            <script>window.__csrfToken = "370060c852de4fc9a95cb5cfff762b53abcd";</script>
+            """
+
+        #expect(throws: APIError.self) {
+            try CourtSession.scrapeToken(from: html)
+        }
+
+        // And the control: the same value with dashes in the usual places is
+        // accepted, so the test above is failing for the shape and not because
+        // every long string is refused.
+        let valid = """
+            <script>window.__csrfToken = "370060c8-52de-4fc9-a95c-b5cfff762b53";</script>
+            """
+
+        #expect(try CourtSession.scrapeToken(from: valid) == "370060c8-52de-4fc9-a95c-b5cfff762b53")
     }
 
     @Test("A second call reuses the cached token without a new request")
