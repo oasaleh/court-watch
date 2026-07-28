@@ -1,0 +1,12 @@
+// Local.xcconfig.example
+//
+// Copy this to Local.xcconfig and put your own team id in it. That file is
+// gitignored, so your team id stays on your machine.
+//
+//     cp Config/Local.xcconfig.example Config/Local.xcconfig
+//
+// The id is the ten-character string under Membership in your Apple Developer
+// account, and the same one Xcode shows beside the team name in the Signing &
+// Capabilities pane.
+
+DEVELOPMENT_TEAM = YOURTEAMID

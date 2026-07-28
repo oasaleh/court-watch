@@ -27,6 +27,8 @@
 		0720A3D330165D8F00F5C2B0 /* CourtWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CourtWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0720A3E030165D9000F5C2B0 /* CourtWatchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CourtWatchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0720A3EA30165D9000F5C2B0 /* CourtWatchUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CourtWatchUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0F71A0130200001000C0001 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
+		C0F71A0230200002000C0001 /* Local.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text; path = Local.xcconfig.example; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,11 +77,21 @@
 		0720A3CA30165D8F00F5C2B0 = {
 			isa = PBXGroup;
 			children = (
+				C0F71A0330200003000C0001 /* Config */,
 				0720A3D530165D8F00F5C2B0 /* CourtWatch */,
 				0720A3E330165D9000F5C2B0 /* CourtWatchTests */,
 				0720A3ED30165D9000F5C2B0 /* CourtWatchUITests */,
 				0720A3D430165D8F00F5C2B0 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		C0F71A0330200003000C0001 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				C0F71A0130200001000C0001 /* Shared.xcconfig */,
+				C0F71A0230200002000C0001 /* Local.xcconfig.example */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		0720A3D430165D8F00F5C2B0 /* Products */ = {
@@ -271,6 +283,7 @@
 /* Begin XCBuildConfiguration section */
 		0720A3F230165D9000F5C2B0 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0F71A0130200001000C0001 /* Shared.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -334,6 +347,7 @@
 		};
 		0720A3F330165D9000F5C2B0 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0F71A0130200001000C0001 /* Shared.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;

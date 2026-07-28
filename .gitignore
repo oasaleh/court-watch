@@ -24,6 +24,10 @@ xcuserdata/
 Pods/
 Carthage/Build/
 
+# Signing — your team id is yours, and Xcode writing it into the project file
+# on every device build is how it would otherwise reach a commit.
+Config/Local.xcconfig
+
 # Secrets — never commit credentials for the ActiveCommunities account
 Secrets.plist
 *.xcconfig.local

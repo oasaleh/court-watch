@@ -1,0 +1,24 @@
+// Shared.xcconfig
+//
+// Build settings that belong to the project rather than to whoever is
+// building it. Committed.
+//
+// The last line pulls in a file that is deliberately *not* committed. The
+// question mark makes the include optional, so a clone without one builds
+// normally rather than failing on a missing file — which is the whole point:
+// every developer signs with their own team, and nobody should have to edit
+// a tracked file to do it.
+//
+// Signing a build to a physical device used to mean Xcode writing
+// DEVELOPMENT_TEAM straight into project.pbxproj, and that value then had to
+// be noticed and stripped before every commit. Setting it here instead means
+// Xcode finds a team already resolved and leaves the project file alone.
+//
+// To build to a device, create Config/Local.xcconfig containing one line:
+//
+//     DEVELOPMENT_TEAM = YOURTEAMID
+//
+// Config/Local.xcconfig.example has a copy of that. Local.xcconfig is
+// gitignored.
+
+#include? "Local.xcconfig"
