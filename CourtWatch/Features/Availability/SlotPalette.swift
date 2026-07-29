@@ -25,11 +25,15 @@
 //  together.
 //
 //  The surface is declared here as well, and that matters more than it looks.
-//  A strip row is a grouped-list row, whose background is `secondarySystemGroupedBackground`
-//  — white in light mode but #1C1C1E in dark, *not* black. Mixing into black
-//  when the row behind is #1C1C1E darkens every block by more than the intended
-//  amount, which is precisely the "muddy in dark mode" failure. The value below
-//  is the real row colour.
+//  The blocks are not painted onto the screen; they are mixed *into* whatever is
+//  behind them, so this value has to be the real backdrop or every block comes
+//  out at a strength other than the one written beside it. The strip sits in a
+//  `.listStyle(.plain)` list (`FavoritesScreen`), whose rows draw no card of
+//  their own — so the backdrop is `systemBackground`: white, and in dark mode
+//  black rather than the #1C1C1E of a grouped row. That distinction was checked
+//  against a screenshot rather than assumed; guessing grouped here lightens
+//  every dark block by more than intended. If the list style ever changes, this
+//  constant changes with it.
 //
 //  D2 still holds: hue is the primary channel and ink density is the fallback,
 //  reinstated whenever the system reports Differentiate Without Color. Changing
@@ -94,33 +98,44 @@ nonisolated enum SlotPalette {
     /// either — yellow at a low mix on white is very nearly invisible.
     static let unknown = SchemeColor(light: 0xE8A317, dark: 0xFFB13A)
 
-    /// What the blocks are mixed *into*: the grouped-list row behind the strip.
+    /// What the blocks are mixed *into*: the backdrop the strip actually sits
+    /// on, which is `systemBackground` because the list is `.listStyle(.plain)`
+    /// and its rows draw no card.
     ///
-    /// Not black in dark mode. See the file note — this is
-    /// `secondarySystemGroupedBackground`, and getting it wrong is what makes
-    /// dark blocks come out heavier than intended.
-    static let surface = SchemeColor(light: 0xFFFFFF, dark: 0x1C1C1E)
+    /// Black in dark mode, not the #1C1C1E of a grouped row. Coupled to the
+    /// list style in `FavoritesScreen` — change one and this changes too.
+    static let surface = SchemeColor(light: 0xFFFFFF, dark: 0x000000)
 
     // MARK: - How far the hue is mixed into the surface
     //
     // 0 is the bare surface, 1 the undiluted hue. Higher in dark mode because
-    // the fraction that reads as a soft wash on white comes out near-invisible
-    // against #1C1C1E.
+    // the fraction that reads as a soft wash on white disappears into black.
 
     /// The everyday wash.
-    static let fillStrength = SchemeStrength(light: 0.28, dark: 0.62)
+    static let fillStrength = SchemeStrength(light: 0.28, dark: 0.60)
 
     /// Increased-contrast: the user has asked for stronger separation, so more
     /// of the hue and less of the surface.
-    static let fillStrengthIncreased = SchemeStrength(light: 0.38, dark: 0.78)
+    ///
+    /// The dark step is deliberately much smaller than the light one, and it is
+    /// not timidity. In light mode a bolder block darkens, moving *away* from
+    /// the near-black hour written on it, so contrast improves on both counts.
+    /// In dark mode a bolder block brightens, moving *toward* the near-white
+    /// hour — so past roughly 0.65 the request for more contrast starts
+    /// destroying the text's. Asking for stronger separation must not make the
+    /// hour harder to read, so the block stops where 4.5:1 does.
+    /// `inkIsLegibleAtIncreasedContrast` is the test that holds this line.
+    static let fillStrengthIncreased = SchemeStrength(light: 0.38, dark: 0.65)
 
     /// How far the hue is pushed toward the text colour for the hour written
     /// inside a labelled cell.
     ///
-    /// Toward black on light, toward white on dark. Green and amber are the
-    /// ones that need it: at full saturation both sit close in luminance to
-    /// their own wash, and caption text needs 4.5:1.
-    static let inkStrength = SchemeStrength(light: 0.45, dark: 0.34)
+    /// Toward black on light, toward white on dark. Dark takes far more of it:
+    /// a dark-mode block is a saturated colour rather than a pale wash, so a
+    /// lightly-tinted hue sitting on it measured 2.9:1 — legible-looking in a
+    /// screenshot and a failure against the 4.5:1 the caption size needs. The
+    /// value is set from the measured ratio rather than by eye.
+    static let inkStrength = SchemeStrength(light: 0.45, dark: 0.85)
 
     // ↑↑↑  CHANGE COLOURS HERE — this block, and only this block.  ↑↑↑
 

@@ -44,6 +44,11 @@ private struct RGB {
         red = Double(resolved.red)
         green = Double(resolved.green)
         blue = Double(resolved.blue)
+
+        relativeLuminance =
+            0.2126 * Double(resolved.linearRed)
+            + 0.7152 * Double(resolved.linearGreen)
+            + 0.0722 * Double(resolved.linearBlue)
     }
 
     /// Straight-line distance in sRGB. Crude as a perceptual measure, which is
@@ -61,6 +66,22 @@ private struct RGB {
     /// block sits above its surface rather than under it.
     var luminance: Double {
         0.2126 * red + 0.7152 * green + 0.0722 * blue
+    }
+
+    /// WCAG relative luminance: the same weights, but over linearised channels.
+    ///
+    /// Distinct from `luminance` above on purpose. That one is a cheap ordering
+    /// and says nothing about legibility; this one is the number the 4.5:1 rule
+    /// is defined against, and using the cheap one in its place would overstate
+    /// the contrast of exactly the mid-tone colours this palette is made of.
+    let relativeLuminance: Double
+
+    /// WCAG contrast ratio, 1:1 to 21:1.
+    func contrast(against other: RGB) -> Double {
+        let lighter = max(relativeLuminance, other.relativeLuminance)
+        let darker = min(relativeLuminance, other.relativeLuminance)
+
+        return (lighter + 0.05) / (darker + 0.05)
     }
 }
 
@@ -94,14 +115,17 @@ struct SlotPaletteTests {
         #expect(light.distance(to: dark) > 0.1)
     }
 
-    /// The surface a block is mixed into is the grouped-list row behind it, and
-    /// in dark mode that row is #1C1C1E rather than black. Mixing into black
-    /// darkens every dark-mode block by more than intended, which is the
-    /// "muddy" failure — so the value is pinned rather than left to drift back.
-    @Test("The dark surface is the grouped-list row, not black")
-    func darkSurfaceIsNotBlack() {
-        #expect(SlotPalette.surface.dark != 0x000000)
-        #expect(SlotPalette.surface.light != SlotPalette.surface.dark)
+    /// The surface a block is mixed into is the backdrop it is actually drawn
+    /// on, and that is set by the list style rather than by anything in this
+    /// file: `.listStyle(.plain)` rows draw no card, so it is `systemBackground`
+    /// — black in dark mode, not the #1C1C1E of a grouped row. Getting it wrong
+    /// puts every dark block at a strength other than the one written beside it.
+    /// Pinned to the two `systemBackground` values so that switching the list to
+    /// a grouped style without revisiting this fails here.
+    @Test("The surface is the plain-list backdrop the strip is drawn on")
+    func surfaceIsTheListBackground() {
+        #expect(SlotPalette.surface.light == 0xFFFFFF)
+        #expect(SlotPalette.surface.dark == 0x000000)
     }
 
     // MARK: - The states stay distinct within a scheme
@@ -154,6 +178,36 @@ struct SlotPaletteTests {
         let block = RGB(SlotPalette.fill(for: fill, scheme: .dark, contrast: .standard))
 
         #expect(block.luminance > surface.luminance)
+    }
+
+    // MARK: - The hour written inside a cell
+
+    /// The labelled tier writes the hour inside the block, so the ink and the
+    /// block it sits on are a text-on-background pair and 4.5:1 is the bar.
+    ///
+    /// That number is stated in the palette's own comments; asserting it is what
+    /// stops it being a claim. Both schemes, because the ink is mixed toward
+    /// black on one and toward white on the other — two different treatments,
+    /// each of which can fail on its own.
+    @Test("The hour in a cell clears 4.5:1 against its own block",
+          arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
+    func inkIsLegibleOnItsBlock(fill: SlotFill, scheme: ColorScheme) {
+        let block = RGB(SlotPalette.fill(for: fill, scheme: scheme, contrast: .standard))
+        let ink = RGB(SlotPalette.ink(for: fill, scheme: scheme))
+
+        #expect(ink.contrast(against: block) >= 4.5)
+    }
+
+    /// Increased Contrast makes the block bolder, which moves it *toward* the
+    /// ink in one scheme and away in the other. The pair has to clear the bar in
+    /// that configuration too, or asking for more contrast would deliver less.
+    @Test("The hour stays legible with Increased Contrast on",
+          arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
+    func inkIsLegibleAtIncreasedContrast(fill: SlotFill, scheme: ColorScheme) {
+        let block = RGB(SlotPalette.fill(for: fill, scheme: scheme, contrast: .increased))
+        let ink = RGB(SlotPalette.ink(for: fill, scheme: scheme))
+
+        #expect(ink.contrast(against: block) >= 4.5)
     }
 
     // MARK: - The mix strengths
