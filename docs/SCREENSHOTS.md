@@ -12,6 +12,12 @@ on an iPhone 17 Pro simulator. Reproduce them with:
 The clock is pinned per shot so the whole day is visible — the app normally hides
 hours that have already ended, which would make most of these two cells wide.
 
+`hero-light.png` and `hero-dark.png` are the exception and are **not** produced by
+that script. They are taken by hand, from a device with three facilities followed
+and rows swiped part-way along, because the script picks its own facilities and
+cannot scroll. Re-running the capture leaves them untouched; replace them by hand
+or the README will keep showing an older build.
+
 ---
 
 ## The day, unfiltered

@@ -9,12 +9,14 @@ and looking.
 
 | Light | Dark |
 |---|---|
-| ![The day, light](docs/screenshots/day-now-light.png) | ![The evening, dark](docs/screenshots/evening-dark.png) |
+| ![Three facilities, light](docs/screenshots/hero-light.png) | ![Three facilities, dark](docs/screenshots/hero-dark.png) |
 
-Left: every court at a place you follow, the day running left to right. The hours
-scroll, and the edge fades where there are more of them. Right: the same screen
-at 8 PM, when three hours are left — they fit, so nothing fades and nothing needs
-swiping.
+Three places you follow, every court at each, from 7 AM onward. Each facility's
+hours scroll as one, so 2 PM stays under 2 PM down all of Meadowlake — and the
+edges fade where there is more in that direction rather than cutting a block in
+half. Shadowbend has been swiped along, which is why its first visible hour is
+nine and why its leading edge is soft; the header still reads *5 of 5 free*,
+because that is about seven o'clock, which is now off to the left.
 
 ## What it does
 
