@@ -63,23 +63,47 @@ nonisolated struct SchemeColor: Hashable, Sendable {
     }
 }
 
-/// A block and the text written on it, in both appearances.
+/// A block, the text written on it, and the stronger text drawn when the user
+/// has asked for more contrast — all in both appearances.
 ///
-/// The two travel together because they are only ever correct together. Split
-/// into separate constants, a later edit can brighten a background without
-/// touching the foreground that has to stay legible on it — which is exactly how
-/// a pair ends up at 1.78:1 with nothing in the file looking wrong.
+/// The background and foreground travel together because they are only ever
+/// correct together. Split into separate constants, a later edit can brighten a
+/// background without touching the foreground that has to stay legible on it,
+/// which is exactly how a pair ends up at 1.78:1 with nothing in the file
+/// looking wrong.
+///
+/// `increasedForeground` exists because the supplied pairs are AA rather than
+/// AAA, and two of them cannot be made AAA without changing the design. The dark
+/// booked red is the hard case: #FF4246 tops out at 6.12:1 against *pure black*,
+/// so no background whatsoever makes it a AAA pair. Reaching 7:1 means a
+/// materially lighter red — which is the right answer for a user who has asked
+/// for maximum contrast and the wrong one to impose on everybody else. So the
+/// supplied colour stays the default and the stronger one appears only when it
+/// is asked for.
 nonisolated struct SlotColors: Hashable, Sendable {
 
     let background: SchemeColor
     let foreground: SchemeColor
 
+    /// Used when `colorSchemeContrast` is `.increased`. Every one of these
+    /// clears 7:1 against its own background; where the supplied colour already
+    /// did, it is repeated unchanged rather than altered for the sake of being
+    /// different.
+    let increasedForeground: SchemeColor
+
     init(
-        lightBackground: UInt32, lightForeground: UInt32,
-        darkBackground: UInt32, darkForeground: UInt32
+        lightBackground: UInt32, lightForeground: UInt32, lightIncreasedForeground: UInt32,
+        darkBackground: UInt32, darkForeground: UInt32, darkIncreasedForeground: UInt32
     ) {
         background = SchemeColor(light: lightBackground, dark: darkBackground)
         foreground = SchemeColor(light: lightForeground, dark: darkForeground)
+        increasedForeground = SchemeColor(
+            light: lightIncreasedForeground, dark: darkIncreasedForeground)
+    }
+
+    /// The text colour for an appearance and a contrast setting.
+    func foreground(for scheme: ColorScheme, contrast: ColorSchemeContrast) -> SchemeColor {
+        contrast == .increased ? increasedForeground : foreground
     }
 }
 
@@ -94,13 +118,22 @@ nonisolated enum SlotPalette {
     /// A free hour.
     static let available = SlotColors(
         lightBackground: 0xE0F4D4, lightForeground: 0x416B2A,
-        darkBackground: 0x213515, darkForeground: 0x83D754
+        lightIncreasedForeground: 0x355622,
+        darkBackground: 0x213515, darkForeground: 0x83D754,
+        darkIncreasedForeground: 0x83D754
     )
 
     /// A taken hour.
+    ///
+    /// The dark pair is the one that cannot be made AAA at this hue: see
+    /// `SlotColors.increasedForeground`. Its increased-contrast form is a
+    /// distinctly lighter red rather than a nudge, because nothing smaller gets
+    /// there.
     static let booked = SlotColors(
         lightBackground: 0xFECDCE, lightForeground: 0x7F1C1E,
-        darkBackground: 0x421011, darkForeground: 0xFF4246
+        lightIncreasedForeground: 0x7D1C1E,
+        darkBackground: 0x421011, darkForeground: 0xFF4246,
+        darkIncreasedForeground: 0xFF8D90
     )
 
     /// An hour the app cannot vouch for — an unrecognised status, or one the
@@ -113,7 +146,9 @@ nonisolated enum SlotPalette {
     /// mistaken for either, and `blocksStayDistinct` measures that.
     static let unknown = SlotColors(
         lightBackground: 0xE6E6E9, lightForeground: 0x4A4A52,
-        darkBackground: 0x2A2A2E, darkForeground: 0xB4B4C0
+        lightIncreasedForeground: 0x484850,
+        darkBackground: 0x2A2A2E, darkForeground: 0xB4B4C0,
+        darkIncreasedForeground: 0xB8B8C2
     )
 
     /// The backdrop the strip is drawn on: `systemBackground`, because the list
@@ -144,13 +179,20 @@ nonisolated enum SlotPalette {
     }
 
     /// The block.
+    ///
+    /// Unaffected by Increase Contrast. The setting moves the *text*, because
+    /// the background is what gives the state its identity at a glance and
+    /// shifting it would change what the grid looks like rather than how legible
+    /// it is.
     static func background(for fill: SlotFill, scheme: ColorScheme) -> Color {
         colors(for: fill).background.color(for: scheme)
     }
 
     /// The hour written on that block.
-    static func foreground(for fill: SlotFill, scheme: ColorScheme) -> Color {
-        colors(for: fill).foreground.color(for: scheme)
+    static func foreground(
+        for fill: SlotFill, scheme: ColorScheme, contrast: ColorSchemeContrast = .standard
+    ) -> Color {
+        colors(for: fill).foreground(for: scheme, contrast: contrast).color(for: scheme)
     }
 
     // MARK: - When colour has been declined
@@ -164,17 +206,21 @@ nonisolated enum SlotPalette {
     // quiet fill that would all but vanish as a stroke.
 
     /// What the shape itself is drawn with: the saturated end of the pair.
-    static func differentiatedShape(for fill: SlotFill, scheme: ColorScheme) -> Color {
-        foreground(for: fill, scheme: scheme)
+    static func differentiatedShape(
+        for fill: SlotFill, scheme: ColorScheme, contrast: ColorSchemeContrast = .standard
+    ) -> Color {
+        foreground(for: fill, scheme: scheme, contrast: contrast)
     }
 
     /// The hour and the symbol drawn on top of that shape.
     ///
     /// The solid block is drawn in the foreground colour, so the text on it
     /// takes the background — the same pair, read in reverse. Contrast is
-    /// symmetric, so a pair that clears 4.5:1 one way clears it the other, and
+    /// symmetric, so a pair that clears its bar one way clears it the other, and
     /// this path inherits the guarantee instead of needing tuning of its own.
-    static func differentiatedInk(for fill: SlotFill, scheme: ColorScheme) -> Color {
+    static func differentiatedInk(
+        for fill: SlotFill, scheme: ColorScheme, contrast: ColorSchemeContrast = .standard
+    ) -> Color {
         switch fill {
         case .filled:
             return background(for: fill, scheme: scheme)
@@ -182,7 +228,7 @@ nonisolated enum SlotPalette {
         case .outline, .hatched:
             // The shape is empty or barely washed, so the hour is really
             // sitting on the surface and keeps the legible end of the pair.
-            return foreground(for: fill, scheme: scheme)
+            return foreground(for: fill, scheme: scheme, contrast: contrast)
         }
     }
 
@@ -192,9 +238,11 @@ nonisolated enum SlotPalette {
     /// The hatched cell is approximated by its surface. Its interior is a 12%
     /// wash over that surface, which moves the number by less than the margin
     /// the test demands.
-    static func differentiatedBackdrop(for fill: SlotFill, scheme: ColorScheme) -> Color {
+    static func differentiatedBackdrop(
+        for fill: SlotFill, scheme: ColorScheme, contrast: ColorSchemeContrast = .standard
+    ) -> Color {
         switch fill {
-        case .filled: foreground(for: fill, scheme: scheme)
+        case .filled: foreground(for: fill, scheme: scheme, contrast: contrast)
         case .outline, .hatched: surface.color(for: scheme)
         }
     }

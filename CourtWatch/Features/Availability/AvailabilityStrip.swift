@@ -175,6 +175,12 @@ private struct SlotCell: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// The user has asked for stronger contrast. It moves the text rather than
+    /// the block: the background is what gives a state its identity at a glance,
+    /// so shifting it would change what the grid looks like instead of how
+    /// legible it is.
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var body: some View {
         ZStack {
             shape
@@ -251,7 +257,8 @@ private struct SlotCell: View {
 
     /// What the shape is drawn with once colour has been declined.
     private var shapeTint: Color {
-        SlotPalette.differentiatedShape(for: appearance.fill, scheme: colorScheme)
+        SlotPalette.differentiatedShape(
+            for: appearance.fill, scheme: colorScheme, contrast: contrast)
     }
 
     /// Drawn on top of a cell, so it has to contrast with whatever that cell
@@ -259,8 +266,10 @@ private struct SlotCell: View {
     /// answer from the palette.
     private var markTint: Color {
         differentiateWithoutColor
-            ? SlotPalette.differentiatedInk(for: appearance.fill, scheme: colorScheme)
-            : SlotPalette.foreground(for: appearance.fill, scheme: colorScheme)
+            ? SlotPalette.differentiatedInk(
+                for: appearance.fill, scheme: colorScheme, contrast: contrast)
+            : SlotPalette.foreground(
+                for: appearance.fill, scheme: colorScheme, contrast: contrast)
     }
 }
 

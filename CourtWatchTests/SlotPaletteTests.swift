@@ -35,6 +35,8 @@ nonisolated enum SlotPaletteCases {
     static let fills: [SlotFill] = [.filled, .outline, .hatched]
 
     static let schemes: [ColorScheme] = [.light, .dark]
+
+    static let contrasts: [ColorSchemeContrast] = [.standard, .increased]
 }
 
 /// A colour as it reaches the screen: sRGB components, 0 to 1.
@@ -99,15 +101,11 @@ struct SlotPaletteTests {
     /// rather than derived from a mix, the contrast between them is a fact about
     /// this file alone and can simply be measured.
     ///
-    /// AA is the floor asserted, and the supplied pairs land there rather than
-    /// at AAA — measured, the weakest is the dark booked pair at about 4.7:1 and
-    /// the light free pair at about 5.4:1. That matters because Increase
-    /// Contrast has no separate treatment any more: the previous palette mixed a
-    /// hue into the surface at a tuned strength, so there was a knob to turn,
-    /// and written-out pairs have no knob. A user with that setting on now sees
-    /// exactly what everyone else does. Raising these to AAA, or adding a second
-    /// set of pairs for that setting, are both real options — guessing at either
-    /// would be inventing colours nobody asked for.
+    /// AA is the floor for the everyday pairs, because that is where the
+    /// supplied colours land — the dark booked pair is about 4.7:1 and the light
+    /// free pair about 5.4:1. They are kept exactly as supplied rather than
+    /// nudged up to AAA, and the stronger set lives behind Increase Contrast
+    /// instead.
     @Test("The hour clears 4.5:1 against its own block",
           arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
     func foregroundIsLegibleOnItsBackground(fill: SlotFill, scheme: ColorScheme) {
@@ -115,6 +113,79 @@ struct SlotPaletteTests {
         let foreground = RGB(SlotPalette.foreground(for: fill, scheme: scheme))
 
         #expect(foreground.contrast(against: background) >= 4.5)
+    }
+
+    /// What Increase Contrast is for, stated as the number it delivers. Every
+    /// pair reaches AAA with that setting on, including the dark booked one that
+    /// cannot reach it at its supplied hue — which is the whole reason there is
+    /// a second set rather than a nudged first one.
+    @Test("Increase Contrast lifts every pair to 7:1",
+          arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
+    func increasedContrastClearsAAA(fill: SlotFill, scheme: ColorScheme) {
+        let background = RGB(SlotPalette.background(for: fill, scheme: scheme))
+        let foreground = RGB(
+            SlotPalette.foreground(for: fill, scheme: scheme, contrast: .increased))
+
+        #expect(foreground.contrast(against: background) >= 7.0)
+    }
+
+    /// The property that makes the setting trustworthy rather than merely
+    /// different: asking for more contrast can never deliver less. A pair that
+    /// was already AAA is repeated unchanged, which satisfies this as equality.
+    @Test("Increase Contrast never reduces contrast",
+          arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
+    func increasedContrastNeverGetsWorse(fill: SlotFill, scheme: ColorScheme) {
+        let background = RGB(SlotPalette.background(for: fill, scheme: scheme))
+        let standard = RGB(SlotPalette.foreground(for: fill, scheme: scheme))
+        let increased = RGB(
+            SlotPalette.foreground(for: fill, scheme: scheme, contrast: .increased))
+
+        #expect(
+            increased.contrast(against: background)
+                >= standard.contrast(against: background) - 0.001)
+    }
+
+    /// The dark booked red is why the second set exists, and this is the
+    /// finding that forced it: #FF4246 reaches only about 6.1:1 against *pure
+    /// black*, so no background at all makes it AAA. Asserted so that a later
+    /// attempt to collapse the two sets by "just darkening the background" fails
+    /// here with the reason attached.
+    @Test("No background can make the supplied dark busy red a AAA pair")
+    func darkBookedRedCannotReachAAA() {
+        let red = RGB(Color(hex: 0xFF4246))
+        let black = RGB(Color(hex: 0x000000))
+
+        #expect(red.contrast(against: black) < 7.0)
+    }
+
+    /// Increase Contrast must not merge two states. It only moves foregrounds,
+    /// and all three moving in the same direction is exactly how a stronger
+    /// palette could end up a less distinguishable one.
+    @Test("The three hours stay pairwise distinct with Increase Contrast on",
+          arguments: SlotPaletteCases.schemes)
+    func increasedForegroundsStayDistinct(scheme: ColorScheme) {
+        let available = RGB(
+            SlotPalette.foreground(for: .filled, scheme: scheme, contrast: .increased))
+        let booked = RGB(
+            SlotPalette.foreground(for: .outline, scheme: scheme, contrast: .increased))
+        let unknown = RGB(
+            SlotPalette.foreground(for: .hatched, scheme: scheme, contrast: .increased))
+
+        #expect(available.distance(to: booked) > 0.1)
+        #expect(available.distance(to: unknown) > 0.1)
+        #expect(booked.distance(to: unknown) > 0.1)
+    }
+
+    /// The stronger unknown must still read as absence rather than as a colour.
+    @Test("The unknown state stays neutral with Increase Contrast on",
+          arguments: SlotPaletteCases.schemes)
+    func increasedUnknownStaysNeutral(scheme: ColorScheme) {
+        let color = RGB(
+            SlotPalette.foreground(for: .hatched, scheme: scheme, contrast: .increased))
+        let channels = [color.red, color.green, color.blue]
+        let spread = (channels.max() ?? 0) - (channels.min() ?? 0)
+
+        #expect(spread < 0.06, "grey should have near-equal channels, spread \(spread)")
     }
 
     // MARK: - The two appearances are genuinely different
