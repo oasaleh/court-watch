@@ -15,9 +15,13 @@
 //
 //    * the last-refreshed line              — `LastRefreshedText.line(at:)`
 //    * the facility summary line            — `AvailabilitySummaryText.line(for:)`
-//    * the hour ruler's labels              — `HourRuler.labels(for:cellWidth:dynamicTypeSize:)`
 //    * the spoken cell label                — `SlotAppearance.fullLabel(court:slot:status:)`
 //    * the in-cell hour and the list tier   — `SlotTime.displayString`, asserted directly
+//
+//  The hour ruler used to be on that list. It is gone: the strip scrolls, so
+//  every cell is wide enough to write its own hour and there is no sparse row of
+//  labels above the grid to keep honest. The times it used to print are the same
+//  `SlotTime.displayString` values now asserted per cell below.
 //
 //  Everything is anchored to the same 2026-07-26 14:00 Central instant the
 //  existing time suite uses, and asserted as exact twelve-hour output with an
@@ -143,74 +147,6 @@ struct GridFormattingTests {
             slot: try slot("07:00:00"), freeCourts: 2, totalCourts: 2, startsLater: false)
 
         #expect(AvailabilitySummaryText.line(for: summary) == "2 of 2 free")
-    }
-
-    // MARK: - The hour ruler
-
-    @Test("Every ruler label is a twelve-hour time")
-    func rendersRulerLabels() throws {
-        let slots = try publishedSlots.map { try slot($0) }
-
-        // The measured phone geometry: 16 slots in a list row of about 330pt.
-        let cellWidth = StripLayout.cellWidth(availableWidth: 330, slotCount: slots.count)
-        let labels = HourRuler.labels(
-            for: slots, cellWidth: cellWidth, dynamicTypeSize: .large)
-
-        #expect(labels.count == 16)
-
-        // Every fourth hour at default sizes, computed rather than hardcoded.
-        #expect(
-            labels.compactMap { $0 } == [
-                "7 AM", "11 AM", "3 PM", "7 PM",
-            ])
-    }
-
-    /// The leading column is always now-or-next, so it is always labelled
-    /// whatever the stride works out to.
-    @Test("The first ruler column is always labelled")
-    func alwaysLabelsTheFirstColumn() throws {
-        let slots = try publishedSlots.map { try slot($0) }
-
-        for width in [120.0, 330.0, 402.0, 960.0] {
-            let cellWidth = StripLayout.cellWidth(availableWidth: width, slotCount: slots.count)
-            let labels = HourRuler.labels(
-                for: slots, cellWidth: cellWidth, dynamicTypeSize: .large)
-
-            #expect((labels.first ?? nil) == "7 AM", "at \(width)pt")
-        }
-    }
-
-    @Test("Raising the text size thins the ruler out rather than overlapping it")
-    func thinsRulerAtLargerTextSizes() throws {
-        let slots = try publishedSlots.map { try slot($0) }
-        let cellWidth = StripLayout.cellWidth(availableWidth: 330, slotCount: slots.count)
-
-        let large = HourRuler.labels(
-            for: slots, cellWidth: cellWidth, dynamicTypeSize: .xxxLarge
-        ).compactMap { $0 }
-
-        // Asserted on the stride rather than the label count. At narrow cell
-        // widths a stride of 4 and a stride of 5 both yield four labels across
-        // sixteen slots, so counting would report no change while the spacing
-        // had in fact widened.
-        //
-        // The labels at the default size were being computed here too and never
-        // looked at, which the compiler said out loud. Only the larger set is
-        // read, and only to check the times survive the thinning.
-        let normalStride = HourRuler.labelStride(
-            cellWidth: cellWidth, dynamicTypeSize: .large)
-        let largeStride = HourRuler.labelStride(
-            cellWidth: cellWidth, dynamicTypeSize: .xxxLarge)
-
-        #expect(largeStride > normalStride, "\(normalStride) -> \(largeStride)")
-        #expect(large.isEmpty == false)
-        #expect(large.allSatisfy { $0.contains("AM") || $0.contains("PM") })
-    }
-
-    @Test("A ruler over no slots produces no labels")
-    func handlesEmptyRuler() {
-        #expect(
-            HourRuler.labels(for: [], cellWidth: 17, dynamicTypeSize: .large).isEmpty)
     }
 
     // MARK: - UI-06, the spoken cell label

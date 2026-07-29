@@ -16,16 +16,21 @@ hours that have already ended, which would make most of these two cells wide.
 
 ## The day, unfiltered
 
-Every court at your chosen facilities, all sixteen hours, no horizontal
-scrolling. The header answers the question before you read a single cell:
-**2 of 5 free** when the place is open at the hour you are looking at, and
-**Next free at 10 PM · 2 of 5** when it is not. The time is named only when it
-differs from the leading column, so the line can never be mistaken for a filter
-that was ignored.
+Every court at your chosen facilities, with the day running left to right. Each
+court's hours scroll horizontally, and every court at a place scrolls together,
+so 9 AM stays under 9 AM down the whole facility. The court numbers are pinned
+outside the scroll, so a row never loses its identity as you swipe.
 
-Green is open, red is taken. The hour ruler labels every few columns — the stride
-is computed from the measured cell width, so raising the text size thins the
-labels out rather than letting them collide.
+The header answers the question before you read a single cell — and now that the
+day no longer fits on one screen, it is the only thing that does so without a
+gesture: **2 of 5 free** when the place is open at the hour you are looking at,
+and **Next free at 10 PM · 2 of 5** when it is not. The time is named only when
+it differs from the leading column, so the line can never be mistaken for a
+filter that was ignored.
+
+Green is open, red is taken, and every block writes its own hour inside itself.
+There is no hour ruler above the rows any more: a ruler could only label every
+few columns, which left two cells in three to be counted across.
 
 | Light | Dark |
 |---|---|
@@ -51,8 +56,8 @@ over while a filter is set.
 
 ## Filtered from 6 PM
 
-Fewer columns means wider cells, so each one writes its own hour and the ruler
-steps aside. Same data, same rules — only the width changed.
+Fewer hours left in the day means the whole row fits on screen with nothing to
+swipe. Same data, same rules, same cell size — only the number of them changed.
 
 | Light | Dark |
 |---|---|

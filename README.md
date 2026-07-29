@@ -77,7 +77,7 @@ CourtWatch/
 ├── API/          CSRF handshake, availability client, sign-in, error taxonomy
 ├── Models/       wire decoding and the domain types it produces
 ├── Features/
-│   ├── Availability/   the grid, its layout tiers, the start-time filter
+│   ├── Availability/   the grid, its palette and layout, the start-time filter
 │   ├── Favorites/      choosing and persisting facilities
 │   └── Account/        optional sign-in
 └── Support/      time, search, credential storage, failure simulation

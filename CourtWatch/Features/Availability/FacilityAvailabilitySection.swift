@@ -4,15 +4,28 @@
 //
 //  One place: what is open here, and every court's remaining day beneath it.
 //
-//  The header's summary line is the point of this file. It answers "what's
-//  open?" before the user parses a single cell, which is what the grid is for
-//  and what a grid alone cannot do at a glance.
+//  The header's summary line is the point of this file, and it matters more than
+//  it used to. The grid no longer shows the whole day at once — the hours scroll
+//  — so the one thing that answers "what's open here?" without any interaction
+//  is this sentence. It was always the fastest path to the answer; it is now the
+//  only one that does not require a gesture.
 //
-//  The summary line and the ruler labels are pure functions rather than string
-//  interpolation buried in a drawn body, and that is not a style preference: a
-//  time string is covered by the twelve-hour gate if and only if some test
-//  asserts it, and no test observes a rendered screen. Producing them here, in
-//  functions a test can call, is what puts them under `Scripts/test-24h.sh`.
+//  The scrolling is arranged once, here, rather than per court. Every court in a
+//  facility lives inside a single horizontal scroll view, so the rows move
+//  together and stay aligned: 9 AM is directly under 9 AM on every court in the
+//  place. A scroll view per row would let them drift apart, and a column of
+//  hours that do not line up is worse than no alignment at all, because it still
+//  looks like a grid.
+//
+//  The court numbers are pinned outside that scroll view for the same reason.
+//  They are the row's identity, and identity that scrolls away leaves a screen
+//  of anonymous coloured rows.
+//
+//  The summary line is a pure function rather than string interpolation buried
+//  in a drawn body, and that is not a style preference: a time string is covered
+//  by the twelve-hour gate if and only if some test asserts it, and no test
+//  observes a rendered screen. Producing it here, in a function a test can call,
+//  is what puts it under `Scripts/test-24h.sh`.
 //
 
 import SwiftUI
@@ -32,9 +45,9 @@ nonisolated enum AvailabilitySummaryText {
     ///
     /// So the time is named if and only if it is *not* the hour on screen. When
     /// the facility is free at the leading hour the count stands alone and is
-    /// about that hour, the one the toolbar names and the ruler puts first;
-    /// when it is not, the line leads with the hour it actually is free, which
-    /// is the fact the user is missing.
+    /// about that hour, the one the toolbar names and the strip puts first; when
+    /// it is not, the line leads with the hour it actually is free, which is the
+    /// fact the user is missing.
     ///
     /// The total is named alongside the count because the count alone cannot be
     /// read either: two free at a two-court place is a quiet evening, two free
@@ -54,56 +67,6 @@ nonisolated enum AvailabilitySummaryText {
     }
 }
 
-/// The sparse hour ruler that sits above the rows in the dense tier.
-nonisolated enum HourRuler {
-
-    /// Roughly how much room "12:00 PM" needs at a given text size.
-    ///
-    /// Approximate on purpose. It is used only to decide how many labels the app
-    /// draws, and the app deciding that for itself is what keeps them from
-    /// colliding or truncating — which is UI-05 for the ruler.
-    static func labelWidth(at size: DynamicTypeSize) -> Double {
-        let base = 48.0
-
-        switch size {
-        case .xSmall, .small, .medium: return base * 0.9
-        case .large: return base
-        case .xLarge: return base * 1.1
-        case .xxLarge: return base * 1.25
-        case .xxxLarge: return base * 1.4
-        default: return base * 1.8
-        }
-    }
-
-    /// Label every nth hour, where n is whatever it takes for a label to fit in
-    /// the room n cells actually give it.
-    ///
-    /// Computed rather than hardcoded, so raising the text size thins the labels
-    /// out instead of overlapping them. At default sizes on a phone showing the
-    /// whole day this comes out at every third hour.
-    static func labelStride(cellWidth: Double, dynamicTypeSize: DynamicTypeSize) -> Int {
-        guard cellWidth > 0 else { return 1 }
-
-        let needed = labelWidth(at: dynamicTypeSize)
-        return max(1, Int((needed / cellWidth).rounded(.up)))
-    }
-
-    /// One entry per slot: the hour to draw there, or nothing.
-    ///
-    /// The first column is always labelled whatever the stride. Past slots are
-    /// gone, so the leading cell is always now-or-next, and saying so is the
-    /// cheapest orientation cue on the screen.
-    static func labels(
-        for slots: [SlotTime], cellWidth: Double, dynamicTypeSize: DynamicTypeSize
-    ) -> [String?] {
-        let stride = labelStride(cellWidth: cellWidth, dynamicTypeSize: dynamicTypeSize)
-
-        return slots.enumerated().map { index, slot in
-            index % stride == 0 ? slot.displayString : nil
-        }
-    }
-}
-
 struct FacilityAvailabilitySection: View {
 
     let facility: Facility
@@ -111,29 +74,27 @@ struct FacilityAvailabilitySection: View {
 
     /// Resolved once for the whole screen and handed down, never resolved here.
     ///
-    /// Resolving per section would let two facilities disagree about tier, and
-    /// the shared column grid — which is what lets every court on screen line up
-    /// without any scroll synchronisation — would break between sections.
+    /// It now turns only on text size, so two sections could not disagree in
+    /// practice — but it is still passed rather than read, because a view that
+    /// reads its own layout is a view that can be given one it ignores.
     let layout: StripLayout
 
-    /// What one cell actually got, for the ruler's spacing arithmetic.
-    let cellWidth: Double
-
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// Matches the strip's own cell height so the pinned numbers line up with
+    /// the rows they name.
+    @ScaledMetric(relativeTo: .caption) private var rowHeight: CGFloat = 34
 
     var body: some View {
         Section {
-            if layout.needsHourRuler {
-                ruler
-            }
+            switch layout {
+            case .list:
+                // No strip to scroll, so no column to pin. Each court draws its
+                // own full-width block of text.
+                ForEach(facility.courts) { court in
+                    strip(for: court)
+                }
 
-            ForEach(facility.courts) { court in
-                AvailabilityStrip(
-                    court: court,
-                    slots: day.slots,
-                    statuses: day.statuses(for: court),
-                    layout: layout
-                )
+            case .strip:
+                scrollingCourts
             }
         } header: {
             header
@@ -154,41 +115,76 @@ struct FacilityAvailabilitySection: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// Drawn whenever a cell cannot carry its own hour.
+    /// Every court in the place, as one row of the list.
     ///
-    /// In the labelled tier every cell writes its time, so a ruler there would
-    /// be duplicate ink. Below that width a cell is a bare block, and without
-    /// this the screen is coloured squares with no way to tell which hour is
-    /// which.
+    /// One row rather than one per court, and that is what makes the shared
+    /// scroll possible: the pinned column and the scrolling hours have to be
+    /// siblings in a single `HStack` for the courts to move together, and a list
+    /// row per court would put each pair in a separate container with a separate
+    /// scroll offset.
     ///
-    /// The court-number column gets an empty spacer rather than a caption. It
-    /// used to read "Now", from when the leading column was always now-or-next;
-    /// allowing an explicit start time to reach back past now made that a
-    /// standing lie — picking 1 PM in the evening rendered "Now  1 PM  3 PM".
-    /// The leading hour is marked by weight instead, which cannot go stale.
-    private var ruler: some View {
-        HStack(spacing: StripLayout.defaultSpacing) {
-            Color.clear
-                .frame(width: StripLayout.defaultLabelWidth, height: 0)
+    /// The trade is that the separator between courts goes, since the list now
+    /// sees one row where it used to see eleven. The rows are already told apart
+    /// by their blocks and their pinned numbers, and a rule between them would
+    /// be drawn across the scrolling content or not at all.
+    private var scrollingCourts: some View {
+        HStack(alignment: .top, spacing: StripLayout.defaultSpacing) {
+            courtNumbers
 
-            ForEach(Array(rulerLabels.enumerated()), id: \.offset) { index, label in
-                Text(label ?? "")
-                    .font(.caption2)
-                    .foregroundStyle(index == 0 ? .primary : .secondary)
-                    .fontWeight(index == 0 ? .semibold : .regular)
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: StripLayout.defaultSpacing) {
+                    ForEach(facility.courts) { court in
+                        strip(for: court)
+                    }
+                }
+            }
+            // The hours are already read out cell by cell, each announcing its
+            // court and its time. Letting VoiceOver treat this as a scroll view
+            // as well would add a container to swipe through that says nothing.
+            .scrollClipDisabled(false)
+        }
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 0))
+        .listRowSeparator(.hidden)
+    }
+
+    /// The pinned leading column: one number per court, aligned to its row.
+    ///
+    /// Hidden from VoiceOver because every cell already announces its own court
+    /// by name. Reading the column as well would put a bare number between each
+    /// court's hours and the next.
+    private var courtNumbers: some View {
+        VStack(alignment: .leading, spacing: StripLayout.defaultSpacing) {
+            ForEach(facility.courts) { court in
+                Text(courtLabel(for: court))
+                    .font(.caption)
+                    .monospacedDigit()
                     .lineLimit(1)
-                    .fixedSize()
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .minimumScaleFactor(0.7)
+                    .frame(
+                        width: StripLayout.defaultLabelWidth,
+                        height: rowHeight,
+                        alignment: .leading)
             }
         }
-        // The ruler repeats what every cell already announces individually, so
-        // reading it aloud as well would double the length of the screen for a
-        // VoiceOver user without adding anything.
         .accessibilityHidden(true)
     }
 
-    private var rulerLabels: [String?] {
-        HourRuler.labels(
-            for: day.slots, cellWidth: cellWidth, dynamicTypeSize: dynamicTypeSize)
+    private func strip(for court: Court) -> some View {
+        AvailabilityStrip(
+            court: court,
+            slots: day.slots,
+            statuses: day.statuses(for: court),
+            layout: layout
+        )
+    }
+
+    /// Just the number, not the whole name.
+    ///
+    /// The facility name is the section header directly above, so repeating it
+    /// on all eleven rows would spend the width this column is trying to keep
+    /// small. A court with no trailing number keeps its full name, because those
+    /// exist and a blank label would be worse than a wide one.
+    private func courtLabel(for court: Court) -> String {
+        CourtNumber.parse(from: court.name).map { "\($0)" } ?? court.name
     }
 }

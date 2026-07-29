@@ -2,147 +2,119 @@
 //  StripLayout.swift
 //  CourtWatch
 //
-//  How much a cell is allowed to say, decided from the width it actually got.
+//  Whether a court's day is drawn as a strip at all.
 //
-//  This is the load-bearing decision of the phase, because it turns UI-05 and
-//  UI-08 — the two most subjective requirements here — into a function with a
-//  return value. "Does it look right on iPad" becomes "does resolving 1032
-//  points across 16 slots return the labelled tier", which is answerable on
-//  every commit rather than at review time.
+//  This file used to answer a harder question. The grid was required to fit
+//  sixteen hours across whatever width it was given without scrolling, so a
+//  cell's width was whatever sixteen of them could share — about seventeen
+//  points on a phone — and the layout decided how much a cell could *say* at
+//  that size: a bare block, a block with a glyph, or a block with the hour
+//  written inside it. Three tiers, resolved from measured width.
 //
-//  Nothing here renders anything, and that is the point of the seam: the layout
-//  decision is answerable without drawing a pixel.
+//  The strip scrolls horizontally now, so a cell is no longer allotted a share
+//  of the screen: it is given the width it needs and the row runs off the edge.
+//  Every cell can therefore carry its own hour, which is what removed the hour
+//  ruler, and with it the entire reason the tiers existed. What is left is the
+//  one decision width could never answer.
 //
-//  On the two widths this is asserted against. 402 and 1032 are the measured
-//  point sizes of an iPhone 17 Pro and an iPad Pro 13-inch (M5). At run time the
-//  caller passes the width its container actually measured, which inside a list
-//  row is smaller — roughly 330 on that phone and 960 on that iPad. Both land on
-//  the same tier, which is what makes the assertion meaningful rather than a
-//  restatement of the constants: 402 gives ≈22 point cells at 16 slots and 330
-//  gives ≈17, and both are comfortably inside the dense band.
+//  At the largest accessibility text sizes the strip is abandoned rather than
+//  shrunk. That is reached by text size, not by width, and it is the whole of
+//  UI-05 that survives: a sixteen-column strip at accessibility3 is unreadable
+//  at any cell width, and a layout that shrinks to fit there is technically
+//  responsive and useless.
+//
+//  Nothing here renders anything, which is the point of the seam: the decision
+//  is answerable without drawing a pixel.
 //
 
 import SwiftUI
 
-/// What a cell draws, in increasing order of how much it says.
+/// Whether the day is drawn as a scrolling strip or as a list of open hours.
 ///
-/// `Comparable` so that D4's claim — the iPad tier at 16 slots is strictly
-/// richer than the iPhone's — can be asserted as a comparison rather than as
-/// two hardcoded expectations that could both be updated to agree with a bug.
+/// `Comparable` so "the list says more than the strip" stays assertable, and
+/// ordered with `list` last for the same reason it was before: it is the most a
+/// cell can say, not the widest.
 nonisolated enum StripLayout: Hashable, Sendable, Comparable {
 
-    /// A block and nothing else. Too narrow for a glyph, so a sparse hour ruler
-    /// sits above the rows instead. This is D2 working as intended rather than
-    /// a missing feature: at ≈17 points a cell cannot carry a mark, and ink
-    /// density is exactly the encoding that does not need one.
-    case dense
-
-    /// Block plus a glyph — but only when the user has declined colour. With
-    /// colour carrying the state a cell at this width draws as a bare block, so
-    /// it needs the hour ruler just as much as the dense tier does.
-    case glyph
-
-    /// Block, symbol, and the hour written inside the cell. No ruler needed —
-    /// every cell says its own time.
-    case labeled
+    /// A horizontally scrolling row of blocks, each carrying its own hour.
+    case strip
 
     /// The strip is abandoned entirely and open hours are listed as full-size
     /// wrapped text.
-    ///
-    /// Ordered last because it is the most a cell can say, not because it is
-    /// the widest. It is reached by text size rather than by width.
     case list
-}
-
-extension StripLayout {
-
-    /// Whether the rows need an hour ruler above them.
-    ///
-    /// True whenever a cell cannot say its own time. Only the labelled tier
-    /// writes the hour inside the cell; `dense` never could, and `glyph` stopped
-    /// being able to when the symbols were dropped in favour of colour. A tier
-    /// that draws a bare block and gets no ruler leaves a screen of coloured
-    /// squares with nothing anywhere saying which hour is which.
-    var needsHourRuler: Bool {
-        switch self {
-        case .dense, .glyph: true
-        case .labeled, .list: false
-        }
-    }
 }
 
 extension StripLayout {
 
     /// The court-number column at the leading edge of every row.
     ///
-    /// A default rather than a constant reached for from a drawing file, so a
-    /// test can state the geometry it is asserting instead of inheriting it.
+    /// Pinned outside the scroll view now rather than being the first thing in
+    /// the row, so it stays on screen while the hours move under it. A default
+    /// rather than a constant reached for from a drawing file, so a test can
+    /// state the geometry it is asserting instead of inheriting it.
     static let defaultLabelWidth: Double = 40
 
-    /// The gap between two cells. Small on purpose: at 16 slots every point
-    /// spent between cells is a point taken off all of them.
-    static let defaultSpacing: Double = 3
-
-    /// Below this a cell cannot carry a glyph legibly.
-    static let glyphThreshold: Double = 32
-
-    /// At or above this a cell can carry the hour as text.
+    /// The gap between two cells.
     ///
-    /// It coincides with Apple's 44-point minimum by arithmetic rather than by
-    /// rule: nothing in this grid is tappable, so the hit-target minimum does
-    /// not bind here. 44 points is simply about where an hour fits.
-    static let labelThreshold: Double = 44
+    /// Wider than it was. It used to be 3 points because at sixteen cells
+    /// sharing one screen every point between them was a point taken off all of
+    /// them; nothing is being shared now, so the gap can be what actually reads
+    /// as a gap.
+    static let defaultSpacing: Double = 6
+
+    /// What one cell gets, in points, before Dynamic Type scaling.
+    ///
+    /// Sized to carry the longest hour this app draws. `SlotTime.displayString`
+    /// renders a whole hour as "12 PM" and anything else as "12:30 PM", and the
+    /// captured data is hourly — but the wider form is what the type can
+    /// produce, so it is what the cell is sized for. A cell that fits the common
+    /// case and truncates the other is a cell that silently drops a colon on the
+    /// one day a facility publishes half-hours.
+    static let defaultCellWidth: Double = 72
 
     /// The text size at which no cell width rescues a sixteen-column strip.
     static let listThreshold: DynamicTypeSize = .accessibility3
 
-    /// What one cell would get, in points.
+    /// How wide a court's whole day is, laid end to end.
     ///
-    /// Never negative, so a container narrower than its own furniture reports
-    /// zero rather than a nonsense figure that would resolve to a rich tier.
-    static func cellWidth(
-        availableWidth: Double,
+    /// Not used to decide anything — the row scrolls, so it can be any width at
+    /// all. It exists so a test can state what the scroll content comes to, and
+    /// so the pinned column's arithmetic has something to be checked against.
+    static func contentWidth(
         slotCount: Int,
-        labelWidth: Double = defaultLabelWidth,
+        cellWidth: Double = defaultCellWidth,
         spacing: Double = defaultSpacing
     ) -> Double {
         guard slotCount > 0 else { return 0 }
 
-        let gaps = spacing * Double(slotCount - 1)
-        return max(0, (availableWidth - labelWidth - gaps) / Double(slotCount))
+        return Double(slotCount) * cellWidth + Double(slotCount - 1) * spacing
     }
 
-    /// The tier to draw.
-    static func resolve(
+    /// Whether the day fits without the user having to scroll.
+    ///
+    /// The strip scrolls when it has to, and often will; this says when it does
+    /// not have to. It is what lets a test state the thing the old design
+    /// promised outright — a short evening still fits on one screen — rather
+    /// than leaving it to be noticed.
+    static func fitsWithoutScrolling(
         availableWidth: Double,
         slotCount: Int,
-        dynamicTypeSize: DynamicTypeSize,
         labelWidth: Double = defaultLabelWidth,
+        cellWidth: Double = defaultCellWidth,
         spacing: Double = defaultSpacing
-    ) -> StripLayout {
+    ) -> Bool {
+        let content = contentWidth(
+            slotCount: slotCount, cellWidth: cellWidth, spacing: spacing)
 
-        // Checked before the arithmetic, and that ordering is UI-05 itself. At
-        // the largest text sizes there is no cell width that rescues a
-        // sixteen-column strip, so the strip is abandoned rather than shrunk.
-        // Getting this backwards produces a layout that is technically
-        // responsive and completely unreadable.
-        if dynamicTypeSize >= listThreshold { return .list }
+        return content <= availableWidth - labelWidth - spacing
+    }
 
-        // Reachable, and exactly TIME-07's finished day. The caller will not
-        // draw a strip then, but a layout function that traps on an empty day
-        // is a crash waiting for the first user who opens the app at eleven at
-        // night. The value is inert — there are no cells to draw.
-        guard slotCount > 0 else { return .dense }
-
-        let width = cellWidth(
-            availableWidth: availableWidth,
-            slotCount: slotCount,
-            labelWidth: labelWidth,
-            spacing: spacing
-        )
-
-        if width >= labelThreshold { return .labeled }
-        if width >= glyphThreshold { return .glyph }
-        return .dense
+    /// The layout to draw.
+    ///
+    /// Width is not a parameter any more, and its absence is the change: no
+    /// measurement of the screen can make a sixteen-column strip readable at
+    /// accessibility3, and no measurement is needed to draw one below that.
+    static func resolve(dynamicTypeSize: DynamicTypeSize) -> StripLayout {
+        dynamicTypeSize >= listThreshold ? .list : .strip
     }
 }

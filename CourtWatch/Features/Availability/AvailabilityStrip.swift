@@ -2,14 +2,20 @@
 //  AvailabilityStrip.swift
 //  CourtWatch
 //
-//  One court, its whole remaining day, in a row that always fits the screen.
+//  One court's remaining day, as a row of hours that runs off the edge.
 //
-//  Sixteen segments across roughly 275 points of an iPhone is about 17 points
-//  each. That is an illegible button and an ordinary chart bar, and the
-//  difference is the whole design: nothing in this grid is tappable, so Apple's
-//  44-point minimum — a *hit target* rule — does not bind here. The governing
-//  constraint is legibility, and a 17-point bar is legible when what it encodes
-//  is how much ink it has rather than what is written inside it.
+//  The row used to be required to fit. Sixteen segments across roughly 275
+//  points of an iPhone is about 17 points each, which is an illegible button and
+//  an ordinary chart bar — and the whole design followed from that number: a
+//  cell too narrow to write in had to encode its state as ink density, and the
+//  hour it stood for had to be printed on a ruler above the rows because no cell
+//  could say it.
+//
+//  It scrolls now, so none of that constraint applies. A cell is given the width
+//  it needs rather than a sixteenth of the screen, which means it can write its
+//  own hour, which is what let the ruler go. What the row gives up is the whole
+//  day at a glance; what pays for that is the facility header, which already
+//  answers "what's open here?" in a sentence before any cell is read.
 //
 //  This file holds no opinion about what a status means. It asks
 //  `SlotAppearance` and draws the answer. A status check here would be a second
@@ -17,11 +23,9 @@
 //  failure a single mapping exists to prevent — so the appearance, and only the
 //  appearance, decides.
 //
-//  It holds no opinion about what anything is *coloured*, either. Every hue,
-//  every mix strength and the surface they are mixed into live in
+//  It holds no opinion about colour either. Every hex lives in
 //  `SlotPalette.swift`, declared once for light mode and once for dark. To
-//  change a shade, edit a hex there — not here. This file asks the palette for
-//  a colour and fills a shape with it.
+//  change a shade, edit it there — not here.
 //
 
 import SwiftUI
@@ -59,68 +63,52 @@ struct AvailabilityStrip: View {
     let statuses: [SlotStatus]
     let layout: StripLayout
 
-    /// Grows with the user's text size rather than staying pinned, so the strip
+    /// Grows with the user's text size rather than staying pinned, so the row
     /// gets taller before it is abandoned altogether at accessibility sizes.
-    @ScaledMetric(relativeTo: .caption) private var cellHeight: CGFloat = 28
+    @ScaledMetric(relativeTo: .caption) private var cellHeight: CGFloat = 34
+
+    /// The cell grows with the text inside it, which is new: the width used to
+    /// be whatever sixteen cells could share, so it could not respond to type
+    /// size at all. Now that the row scrolls, a larger text size makes wider
+    /// cells and a longer row rather than smaller text in a fixed box.
+    @ScaledMetric(relativeTo: .caption) private var cellWidth: CGFloat =
+        StripLayout.defaultCellWidth
 
     var body: some View {
         switch layout {
         case .list:
             openHoursList
-        case .dense, .glyph, .labeled:
+        case .strip:
             strip
         }
     }
 
     // MARK: - The strip
 
+    /// The hours, in order, each in a cell of its own.
+    ///
+    /// No court label at the leading edge any more — it is pinned outside the
+    /// scroll view by `FacilityAvailabilitySection`, so that it stays put while
+    /// these move. A label inside the scrolling content would slide away and
+    /// leave a screen of unattributed rows.
+    ///
+    /// Walking the pairs rather than the slot indices: `VisibleDay` guarantees
+    /// one status per visible slot, so this is the same sixteen cells — but it
+    /// is the shape that *cannot* read past either array. Every cell goes
+    /// through the appearance mapping and every cell is announced; there is no
+    /// cell hidden from VoiceOver, which was a screen-reader user silently
+    /// losing squares a sighted user could see were empty.
     private var strip: some View {
         HStack(spacing: StripLayout.defaultSpacing) {
-            Text(courtLabel)
-                .font(.caption)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(width: StripLayout.defaultLabelWidth, alignment: .leading)
-                .accessibilityLabel(court.name)
-
-            // Each cell takes an equal share of whatever width is actually
-            // there, so rounding cannot accumulate across sixteen of them and
-            // the row can never come out wider than its container. The tier
-            // decides only what a cell *draws* — never what frame it gets.
-            // Conflating those two jobs is how a strip ends up one pixel wide
-            // of the screen it is supposed to fit.
-            //
-            // Walking the pairs rather than the slot indices: `VisibleDay`
-            // guarantees one status per visible slot, so this is the same
-            // sixteen cells — but it is the shape that *cannot* read past
-            // either array, which is what lets the placeholder branch go. Every
-            // cell now goes through the appearance mapping and every cell is
-            // announced. There is no longer a cell hidden from VoiceOver, which
-            // was a screen-reader user silently losing squares a sighted user
-            // could see were empty.
             ForEach(Array(zip(slots, statuses).enumerated()), id: \.offset) { index, pair in
                 SlotCell(
                     appearance: SlotAppearance.of(pair.1),
-                    layout: layout,
                     slot: pair.0,
                     label: SlotAppearance.label(court: court.name, slot: pair.0)
                 )
-                .frame(maxWidth: .infinity)
-                .frame(height: cellHeight)
+                .frame(width: cellWidth, height: cellHeight)
             }
         }
-    }
-
-    /// Just the number, not the whole name.
-    ///
-    /// The facility name is the section header directly above, so repeating it
-    /// in all eleven rows would spend exactly the width that makes the strip fit
-    /// at all — this column is what buys the cells their 17 points. A court with
-    /// no trailing number keeps its full name, because those exist and a blank
-    /// label would be worse than a wide one.
-    private var courtLabel: String {
-        CourtNumber.parse(from: court.name).map { "\($0)" } ?? court.name
     }
 
     // MARK: - The accessibility-size list
@@ -178,16 +166,14 @@ struct AvailabilityStrip: View {
 private struct SlotCell: View {
 
     let appearance: SlotAppearance
-    let layout: StripLayout
     let slot: SlotTime
     let label: String
 
     /// The user has asked not to be made to rely on colour. Meaning moves from
-    /// hue back to ink density, and the symbols come back with it.
+    /// the block's colour back to ink density, and the symbols come back with it.
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         ZStack {
@@ -205,16 +191,16 @@ private struct SlotCell: View {
 
     @ViewBuilder
     private var shape: some View {
-        let rectangle = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        let rectangle = RoundedRectangle(cornerRadius: 7, style: .continuous)
 
         if differentiateWithoutColor {
             // Colour has been declined, so meaning goes back to ink density:
             // solid, empty and hatched are three different amounts of ink and
             // stay distinct with every hue removed.
             //
-            // The strokes are drawn in the palette's darkened ink rather than
-            // the raw hue. A hairline of undiluted gold measured about 2.3:1
-            // against white, and in this path the shape *is* the meaning.
+            // Drawn in the saturated end of the palette's pair rather than the
+            // block colour. The block colour is a quiet fill and would all but
+            // vanish as a hairline, and in this path the shape *is* the meaning.
             switch appearance.fill {
             case .filled:
                 rectangle.fill(shapeTint)
@@ -233,83 +219,48 @@ private struct SlotCell: View {
                     .overlay { rectangle.strokeBorder(shapeTint, lineWidth: 2) }
             }
         } else {
-            // A single tinted block, no edge and no border.
-            //
-            // The fill is therefore the only colour signal, which sets a floor
-            // on how muted it can be: too far toward the background and a dark
-            // green and a dark red stop being tellable apart at a glance, which
-            // is the one thing this grid exists to do. The hues and the mix are
-            // chosen per scheme in `SlotPalette`, which is where that floor is
-            // actually set — and where it is changed.
-            rectangle.fill(mutedFill)
+            rectangle.fill(SlotPalette.background(for: appearance.fill, scheme: colorScheme))
         }
     }
 
-    /// The block, as the palette resolves it for this scheme and contrast.
-    private var mutedFill: Color {
-        SlotPalette.fill(for: appearance.fill, scheme: colorScheme, contrast: contrast)
-    }
-
-    /// The hour, and nothing else.
+    /// The hour, written inside the block.
     ///
-    /// No symbol: once colour carries the state, a tick on every free cell is
-    /// ink spent repeating what the block already says, and it steals the height
-    /// that makes the hour legible. The symbol comes back only when colour has
-    /// been declined, where it is the thing doing the work rather than decoration.
-    @ViewBuilder
+    /// Every cell carries it now. That is what replaced the ruler: a sparse
+    /// strip of hours above the rows, labelled every third column because that
+    /// was all that fit, leaving two cells in three that the user had to count
+    /// across to place. A cell wide enough to say its own hour does not need
+    /// counting.
+    ///
+    /// The symbol comes back only when colour has been declined, where it is the
+    /// thing doing the work rather than decoration.
     private var mark: some View {
-        switch layout {
-        case .dense, .list:
-            EmptyView()
-
-        case .glyph:
+        HStack(spacing: 2) {
             if differentiateWithoutColor {
                 Image(systemName: appearance.symbolName)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(markTint)
+                    .font(.caption2.bold())
             }
 
-        case .labeled:
-            VStack(spacing: 1) {
-                if differentiateWithoutColor {
-                    Image(systemName: appearance.symbolName)
-                        .font(.caption2.bold())
-                }
-
-                Text(slot.displayString)
-                    .font(.caption.weight(.medium))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-            }
-            .foregroundStyle(markTint)
-            .padding(.horizontal, 2)
+            Text(slot.displayString)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .foregroundStyle(markTint)
+        .padding(.horizontal, 3)
     }
 
-    /// What the shape is drawn with once colour has been declined: full-
-    /// strength hue for the solid block, darkened ink for the hairlines.
+    /// What the shape is drawn with once colour has been declined.
     private var shapeTint: Color {
         SlotPalette.differentiatedShape(for: appearance.fill, scheme: colorScheme)
     }
 
     /// Drawn on top of a cell, so it has to contrast with whatever that cell
-    /// drew — and the two paths draw very different things, so each gets its
-    /// own answer from the palette.
-    ///
-    /// On the muted wash the hue itself is the ink: quiet surface, confident
-    /// text. On the declined-colour path it sits on a solid block of undiluted
-    /// hue instead, where white — which this used to be — measured 1.78:1 in
-    /// dark mode.
+    /// drew — and the two paths draw very different things, so each gets its own
+    /// answer from the palette.
     private var markTint: Color {
         differentiateWithoutColor
             ? SlotPalette.differentiatedInk(for: appearance.fill, scheme: colorScheme)
-            : strongInk
-    }
-
-    /// The hue, pushed far enough toward the text colour to stay legible on its
-    /// own muted wash. Resolved per scheme by the palette.
-    private var strongInk: Color {
-        SlotPalette.ink(for: appearance.fill, scheme: colorScheme)
+            : SlotPalette.foreground(for: appearance.fill, scheme: colorScheme)
     }
 }
 

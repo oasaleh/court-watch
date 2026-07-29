@@ -108,38 +108,29 @@ struct FavoritesScreen: View {
 
     /// One section per chosen place, every court in it, its whole remaining day.
     ///
-    /// The width is measured once, here, for the whole screen. Every section
-    /// then draws at the same tier, which is what keeps the columns lined up
-    /// across facilities without any shared scrolling machinery — and what makes
-    /// "no horizontal scrolling" achievable at all.
+    /// No `GeometryReader` any more, and its absence is the change. The screen
+    /// used to be measured once here so every section could draw at the same
+    /// width-derived tier, which is what kept columns lined up across facilities
+    /// without any shared scrolling machinery. The hours scroll per facility
+    /// now, so there is no cross-facility alignment left to protect and nothing
+    /// for a measurement to decide: the layout turns on text size alone.
     private func grid(for facilities: [Facility], notices: [String]) -> some View {
-        GeometryReader { proxy in
-            let layout = StripLayout.resolve(
-                availableWidth: proxy.size.width,
-                slotCount: day.slots.count,
-                dynamicTypeSize: dynamicTypeSize
-            )
-            let cellWidth = StripLayout.cellWidth(
-                availableWidth: proxy.size.width,
-                slotCount: day.slots.count
-            )
+        let layout = StripLayout.resolve(dynamicTypeSize: dynamicTypeSize)
 
-            List {
-                if notices.isEmpty == false {
-                    noticeStrip(notices)
-                }
-
-                ForEach(facilities) { facility in
-                    FacilityAvailabilitySection(
-                        facility: facility,
-                        day: day,
-                        layout: layout,
-                        cellWidth: cellWidth
-                    )
-                }
+        return List {
+            if notices.isEmpty == false {
+                noticeStrip(notices)
             }
-            .listStyle(.plain)
+
+            ForEach(facilities) { facility in
+                FacilityAvailabilitySection(
+                    facility: facility,
+                    day: day,
+                    layout: layout
+                )
+            }
         }
+        .listStyle(.plain)
     }
 
     /// One line each for what was kept and never said.

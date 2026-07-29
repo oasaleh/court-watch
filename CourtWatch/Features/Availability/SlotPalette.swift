@@ -8,37 +8,32 @@
 //  │  else in the app names a colour for a time slot.                     │
 //  └──────────────────────────────────────────────────────────────────────┘
 //
-//  Why a file rather than three `.green`/`.red`/`.orange` literals in the view:
-//  those literals are one colour each, and this grid needs two. A hue tuned to
-//  read as a pale wash on white is the same hue that comes out muddy once it is
-//  mixed into a near-black surface, and the reverse — a hue bright enough to
-//  glow in the dark — is washed out and low-contrast on white. So every colour
-//  here is declared twice, once per scheme, and resolved against the scheme the
-//  cell is actually being drawn in.
+//  Every colour is declared twice, once per appearance. A colour tuned to read
+//  as a soft block on white is the same one that comes out muddy on black, and
+//  the reverse — one bright enough to hold up in the dark — is washed out on
+//  white. Declaring a single value and adjusting it at draw time is the
+//  assumption that produces bad dark mode, so both halves are written out and
+//  chosen rather than derived.
 //
-//  Why hex numbers and not an asset catalog colour set. The strip does not paint
-//  its hues directly; it mixes them into the surface (`SlotBlock.fill`) and
-//  toward the text colour (`SlotPalette.ink`). Those mixes need a concrete
-//  starting colour in a known space, and a hex literal sitting next to the
-//  strength it is mixed at is legible as one decision. Split across the catalog
-//  UI and this file it would be two, in two places, that only look right
-//  together.
+//  Each state is a *pair of pairs*: a background and the foreground written on
+//  it, per appearance. That is the whole model, and it replaced an earlier one
+//  that mixed a single hue into the surface at a tuned strength. The mix was
+//  clever and wrong: it made a block's final colour a function of the surface
+//  behind it, so the same constant drew differently in two places, and the text
+//  on top had to be re-derived from the result and tuned back into legibility.
+//  Naming both ends outright is duller and cannot drift.
 //
-//  The surface is declared here as well, and that matters more than it looks.
-//  The blocks are not painted onto the screen; they are mixed *into* whatever is
-//  behind them, so this value has to be the real backdrop or every block comes
-//  out at a strength other than the one written beside it. The strip sits in a
-//  `.listStyle(.plain)` list (`FavoritesScreen`), whose rows draw no card of
-//  their own — so the backdrop is `systemBackground`: white, and in dark mode
-//  black rather than the #1C1C1E of a grouped row. That distinction was checked
-//  against a screenshot rather than assumed; guessing grouped here lightens
-//  every dark block by more than intended. If the list style ever changes, this
-//  constant changes with it.
+//  Because both ends are named rather than computed, the contrast between them
+//  is a property of this file alone. `SlotPaletteTests` measures every pair
+//  against WCAG: 4.5:1 for the hour written inside a block, 3:1 for a shape that
+//  has to be seen at all. That is not ceremony — measuring is how three real
+//  failures were found in the treatment that preceded this one, including white
+//  text at 1.78:1 in the path a user who has declined colour depends on.
 //
-//  D2 still holds: hue is the primary channel and ink density is the fallback,
-//  reinstated whenever the system reports Differentiate Without Color. Changing
-//  a hex here changes how the grid looks; it cannot change what a state means,
-//  because meaning lives in `SlotAppearance` and this file never sees a
+//  D2 still holds: colour is the primary channel and ink density is the
+//  fallback, reinstated whenever the system reports Differentiate Without Color.
+//  Changing a hex here changes how the grid looks; it cannot change what a state
+//  means, because meaning lives in `SlotAppearance` and this file never sees a
 //  `SlotStatus`. It is handed a `SlotFill` — an amount of ink — and answers with
 //  a colour. That separation is what keeps a colour edit from being able to make
 //  a booked hour read as free.
@@ -46,14 +41,9 @@
 
 import SwiftUI
 
-// MARK: - A colour, written once per scheme
+// MARK: - A colour, written once per appearance
 
 /// One colour with a light-mode and a dark-mode value.
-///
-/// A pair rather than a single value with an opacity or brightness tweak
-/// applied at draw time, because "the same colour, adjusted" is the assumption
-/// that produces muddy dark mode. Light and dark are chosen independently and
-/// the pair keeps them side by side, where a reviewer can see both.
 nonisolated struct SchemeColor: Hashable, Sendable {
 
     /// 0xRRGGBB as drawn on a light background.
@@ -62,14 +52,34 @@ nonisolated struct SchemeColor: Hashable, Sendable {
     /// 0xRRGGBB as drawn on a dark background.
     let dark: UInt32
 
-    /// The raw hex for a scheme. Exposed so tests can assert the two differ
-    /// without going through colour resolution.
+    /// The raw hex for an appearance. Exposed so tests can assert the two
+    /// differ without going through colour resolution.
     func hex(for scheme: ColorScheme) -> UInt32 {
         scheme == .dark ? dark : light
     }
 
     func color(for scheme: ColorScheme) -> Color {
         Color(hex: hex(for: scheme))
+    }
+}
+
+/// A block and the text written on it, in both appearances.
+///
+/// The two travel together because they are only ever correct together. Split
+/// into separate constants, a later edit can brighten a background without
+/// touching the foreground that has to stay legible on it — which is exactly how
+/// a pair ends up at 1.78:1 with nothing in the file looking wrong.
+nonisolated struct SlotColors: Hashable, Sendable {
+
+    let background: SchemeColor
+    let foreground: SchemeColor
+
+    init(
+        lightBackground: UInt32, lightForeground: UInt32,
+        darkBackground: UInt32, darkForeground: UInt32
+    ) {
+        background = SchemeColor(light: lightBackground, dark: darkBackground)
+        foreground = SchemeColor(light: lightForeground, dark: darkForeground)
     }
 }
 
@@ -81,86 +91,51 @@ nonisolated enum SlotPalette {
     //
     // ↓↓↓  CHANGE COLOURS HERE — this block, and only this block.  ↓↓↓
 
-    /// A free hour. Deeper in light mode so a 28% wash on white still reads as
-    /// green rather than as a grey; brighter in dark mode so the same block
-    /// does not sink into the row behind it.
-    static let available = SchemeColor(light: 0x1F9E4B, dark: 0x3FDD6E)
+    /// A free hour.
+    static let available = SlotColors(
+        lightBackground: 0xE0F4D4, lightForeground: 0x416B2A,
+        darkBackground: 0x213515, darkForeground: 0x83D754
+    )
 
-    /// A taken hour. A true red rather than a warm one: at a 28% wash on white
-    /// a warm red and the amber below converge into the same pale orange, which
-    /// `SlotPaletteTests.blocksStayDistinct` catches and fails on.
-    static let booked = SchemeColor(light: 0xC62828, dark: 0xFF6259)
+    /// A taken hour.
+    static let booked = SlotColors(
+        lightBackground: 0xFECDCE, lightForeground: 0x7F1C1E,
+        darkBackground: 0x421011, darkForeground: 0xFF4246
+    )
 
-    /// An hour the app cannot vouch for — an unrecognised status or one the
-    /// payload never published. Gold rather than orange, for the reason above:
-    /// orange is what red *becomes* when it is washed out, so the two have to be
-    /// separated at the hue before the mix pulls them together. Not yellow
-    /// either — yellow at a low mix on white is very nearly invisible.
-    static let unknown = SchemeColor(light: 0xE8A317, dark: 0xFFB13A)
-
-    /// What the blocks are mixed *into*: the backdrop the strip actually sits
-    /// on, which is `systemBackground` because the list is `.listStyle(.plain)`
-    /// and its rows draw no card.
+    /// An hour the app cannot vouch for — an unrecognised status, or one the
+    /// payload never published.
     ///
-    /// Black in dark mode, not the #1C1C1E of a grouped row. Coupled to the
-    /// list style in `FavoritesScreen` — change one and this changes too.
+    /// Neutral rather than a third hue, and that is the design. Free and busy
+    /// are the two answers the user came for; a colour of its own would put this
+    /// state on the same footing as them, when what it says is that there is no
+    /// answer. Grey reads as absence, which is the truth. It must still never be
+    /// mistaken for either, and `blocksStayDistinct` measures that.
+    static let unknown = SlotColors(
+        lightBackground: 0xE6E6E9, lightForeground: 0x4A4A52,
+        darkBackground: 0x2A2A2E, darkForeground: 0xB4B4C0
+    )
+
+    /// The backdrop the strip is drawn on: `systemBackground`, because the list
+    /// is `.listStyle(.plain)` and its rows draw no card of their own.
+    ///
+    /// Black in dark mode, not the #1C1C1E of a grouped row. Coupled to the list
+    /// style in `FavoritesScreen` — change one and this changes with it. Nothing
+    /// is mixed into it any more; it is the reference a shape has to be visible
+    /// against once colour has been declined.
     static let surface = SchemeColor(light: 0xFFFFFF, dark: 0x000000)
-
-    // MARK: - How far the hue is mixed into the surface
-    //
-    // 0 is the bare surface, 1 the undiluted hue. Higher in dark mode because
-    // the fraction that reads as a soft wash on white disappears into black.
-
-    /// The everyday wash.
-    static let fillStrength = SchemeStrength(light: 0.28, dark: 0.60)
-
-    /// Increased-contrast: the user has asked for stronger separation, so more
-    /// of the hue and less of the surface.
-    ///
-    /// The dark step is deliberately much smaller than the light one, and it is
-    /// not timidity. In light mode a bolder block darkens, moving *away* from
-    /// the near-black hour written on it, so contrast improves on both counts.
-    /// In dark mode a bolder block brightens, moving *toward* the near-white
-    /// hour — so past roughly 0.65 the request for more contrast starts
-    /// destroying the text's. Asking for stronger separation must not make the
-    /// hour harder to read, so the block stops where 4.5:1 does.
-    /// `inkIsLegibleAtIncreasedContrast` is the test that holds this line.
-    static let fillStrengthIncreased = SchemeStrength(light: 0.38, dark: 0.65)
-
-    /// How far the hour is pushed toward black when it is drawn on a solid
-    /// block of undiluted hue — the `filled` cell of the declined-colour path.
-    ///
-    /// The same value in both appearances, and that is not an oversight. Every
-    /// other pair here differs because the *backdrop* differs by appearance; in
-    /// this one case the backdrop is the hue itself, which is already a per-
-    /// appearance colour, so the treatment on top of it does not need to move.
-    ///
-    /// It replaces white. White on that block measured 3.47:1 in light mode and
-    /// 1.78:1 in dark — the one path a user who has switched Differentiate
-    /// Without Color on is relying on, and the least legible thing in the app.
-    static let differentiatedInkStrength = SchemeStrength(light: 0.75, dark: 0.75)
-
-    /// How far the hue is pushed toward the text colour for the hour written
-    /// inside a labelled cell, on the everyday muted wash.
-    ///
-    /// Toward black on light, toward white on dark. Dark takes far more of it:
-    /// a dark-mode block is a saturated colour rather than a pale wash, so a
-    /// lightly-tinted hue sitting on it measured 2.9:1 — legible-looking in a
-    /// screenshot and a failure against the 4.5:1 the caption size needs. The
-    /// value is set from the measured ratio rather than by eye.
-    static let inkStrength = SchemeStrength(light: 0.45, dark: 0.85)
 
     // ↑↑↑  CHANGE COLOURS HERE — this block, and only this block.  ↑↑↑
 
     // MARK: - Resolving
 
-    /// The hue for an amount of ink.
+    /// The colours for an amount of ink.
     ///
     /// Takes a `SlotFill`, never a `SlotStatus`. This file draws; it does not
     /// decide what anything means. No `default` arm, matching `SlotAppearance`:
     /// a fourth fill must stop this file compiling rather than silently
     /// inheriting a colour.
-    static func hue(for fill: SlotFill) -> SchemeColor {
+    static func colors(for fill: SlotFill) -> SlotColors {
         switch fill {
         case .filled: available
         case .outline: booked
@@ -168,79 +143,46 @@ nonisolated enum SlotPalette {
         }
     }
 
-    /// The undiluted hue, as used for strokes, hatching and glyphs.
-    static func tint(for fill: SlotFill, scheme: ColorScheme) -> Color {
-        hue(for: fill).color(for: scheme)
+    /// The block.
+    static func background(for fill: SlotFill, scheme: ColorScheme) -> Color {
+        colors(for: fill).background.color(for: scheme)
     }
 
-    /// The block itself: the hue mixed opaquely into the surface.
-    ///
-    /// A perceptual mix rather than `.opacity()`. A translucent hue takes its
-    /// result from whatever happens to be behind it and loses chroma over a
-    /// dark background, which is what comes out muddy; mixing against the real
-    /// surface colour does not.
-    static func fill(
-        for fill: SlotFill,
-        scheme: ColorScheme,
-        contrast: ColorSchemeContrast
-    ) -> Color {
-        let strength =
-            contrast == .increased
-            ? fillStrengthIncreased.value(for: scheme)
-            : fillStrength.value(for: scheme)
-
-        return surface.color(for: scheme)
-            .mix(with: tint(for: fill, scheme: scheme), by: strength, in: .perceptual)
-    }
-
-    /// The hour written inside a labelled cell: the hue pushed far enough
-    /// toward the text colour to stay legible on its own wash.
-    static func ink(for fill: SlotFill, scheme: ColorScheme) -> Color {
-        let strength = inkStrength.value(for: scheme)
-        let toward: Color = scheme == .dark ? .white : .black
-
-        return tint(for: fill, scheme: scheme).mix(with: toward, by: strength, in: .perceptual)
+    /// The hour written on that block.
+    static func foreground(for fill: SlotFill, scheme: ColorScheme) -> Color {
+        colors(for: fill).foreground.color(for: scheme)
     }
 
     // MARK: - When colour has been declined
     //
     // Differentiate Without Color is on, so the cell goes back to drawing an
     // amount of ink: a solid block, an empty outline, a hatch. Meaning stops
-    // depending on hue — but the shapes are still *drawn* in one, and that hue
-    // now has to survive on its own rather than as a wash. Undiluted, it does
-    // not: the gold measured about 2.3:1 against white, under even the 3:1 bar
-    // a shape has to clear. So the shapes are stroked in the same darkened ink
-    // the hour uses, and only the solid block keeps the hue at full strength —
-    // because that block is a filled area against the surface, not a hairline.
+    // depending on which colour a block is — but the shapes are still drawn in
+    // one, and a hairline has to hold up against the *surface* rather than
+    // against its own block. The foreground end of each pair is what does that:
+    // it is the saturated one, chosen to be legible, where the background is a
+    // quiet fill that would all but vanish as a stroke.
 
-    /// What the shape itself is drawn with.
+    /// What the shape itself is drawn with: the saturated end of the pair.
     static func differentiatedShape(for fill: SlotFill, scheme: ColorScheme) -> Color {
-        switch fill {
-        case .filled:
-            // A filled area rather than a stroke, so full strength carries.
-            return tint(for: fill, scheme: scheme)
-
-        case .outline, .hatched:
-            // Hairlines. They need the darkened ink to hold up on the surface.
-            return ink(for: fill, scheme: scheme)
-        }
+        foreground(for: fill, scheme: scheme)
     }
 
     /// The hour and the symbol drawn on top of that shape.
+    ///
+    /// The solid block is drawn in the foreground colour, so the text on it
+    /// takes the background — the same pair, read in reverse. Contrast is
+    /// symmetric, so a pair that clears 4.5:1 one way clears it the other, and
+    /// this path inherits the guarantee instead of needing tuning of its own.
     static func differentiatedInk(for fill: SlotFill, scheme: ColorScheme) -> Color {
         switch fill {
         case .filled:
-            // Sits on a solid block of undiluted hue, so it has to darken
-            // against it. This is the case white used to get wrong.
-            return tint(for: fill, scheme: scheme)
-                .mix(
-                    with: .black,
-                    by: differentiatedInkStrength.value(for: scheme), in: .perceptual)
+            return background(for: fill, scheme: scheme)
 
         case .outline, .hatched:
             // The shape is empty or barely washed, so the hour is really
-            // sitting on the surface and takes the ordinary treatment.
-            return ink(for: fill, scheme: scheme)
+            // sitting on the surface and keeps the legible end of the pair.
+            return foreground(for: fill, scheme: scheme)
         }
     }
 
@@ -248,26 +190,13 @@ nonisolated enum SlotPalette {
     /// measured rather than assumed.
     ///
     /// The hatched cell is approximated by its surface. Its interior is a 12%
-    /// wash of the hue over that surface, which moves the number by less than
-    /// the margin the test demands — and treating it as the bare surface is the
-    /// conservative direction for the outline case beside it.
+    /// wash over that surface, which moves the number by less than the margin
+    /// the test demands.
     static func differentiatedBackdrop(for fill: SlotFill, scheme: ColorScheme) -> Color {
         switch fill {
-        case .filled: tint(for: fill, scheme: scheme)
+        case .filled: foreground(for: fill, scheme: scheme)
         case .outline, .hatched: surface.color(for: scheme)
         }
-    }
-}
-
-// MARK: - A mix strength, written once per scheme
-
-nonisolated struct SchemeStrength: Hashable, Sendable {
-
-    let light: Double
-    let dark: Double
-
-    func value(for scheme: ColorScheme) -> Double {
-        scheme == .dark ? dark : light
     }
 }
 

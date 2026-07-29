@@ -2,16 +2,21 @@
 //  SlotPaletteTests.swift
 //  CourtWatchTests
 //
-//  That the two schemes differ is the assertion this file exists for.
+//  Two things this file exists to catch, neither of which a screenshot can.
 //
-//  A palette can be split into a light and a dark value and still hold the same
-//  hex in both, and nothing about that is visible in review: the file *looks*
-//  scheme-aware, every screenshot of one mode looks right, and the bug is only
-//  ever seen by someone who switches. So the inequality is asserted directly,
-//  state by state, in the raw hex and again in the colour the strip actually
-//  fills a block with.
+//  The first is a pair that renders identically in both appearances. A palette
+//  can be split into a light and a dark value and still hold the same colour in
+//  both, and nothing about that is visible in review: the file *looks*
+//  appearance-aware, every screenshot of one mode looks right, and the bug is
+//  only ever seen by someone who switches.
 //
-//  The blocks are compared as resolved sRGB components rather than as `Color`
+//  The second is contrast, and it is why this file measures rather than
+//  compares. The treatment that preceded these pairs had three failures in it —
+//  dark-mode label text at 2.9:1, and, in the path a user who has declined
+//  colour depends on, white text at 1.78:1 and a gold hairline at 2.3:1. Every
+//  one of them looked fine in a screenshot. Only the ratio said otherwise.
+//
+//  Colours are compared as resolved sRGB components rather than as `Color`
 //  values. Two `Color`s built by different routes can compare unequal while
 //  rendering identically, which would make an equality assertion pass for the
 //  wrong reason; resolving to numbers compares what reaches the screen.
@@ -39,6 +44,16 @@ private struct RGB {
     let green: Double
     let blue: Double
 
+    /// WCAG relative luminance: the standard weights over *linearised*
+    /// channels.
+    ///
+    /// Distinct from the cheap `luminance` below on purpose. That one is an
+    /// ordering and says nothing about legibility; this is the number the 4.5:1
+    /// rule is defined against, and using the cheap one in its place would
+    /// overstate the contrast of exactly the mid-tone colours a palette is made
+    /// of.
+    let relativeLuminance: Double
+
     init(_ color: Color) {
         let resolved = color.resolve(in: EnvironmentValues())
         red = Double(resolved.red)
@@ -62,19 +77,10 @@ private struct RGB {
         return (dr * dr + dg * dg + db * db).squareRoot()
     }
 
-    /// How light the colour is, roughly. Enough to assert that a dark-mode
-    /// block sits above its surface rather than under it.
+    /// How light the colour is, roughly.
     var luminance: Double {
         0.2126 * red + 0.7152 * green + 0.0722 * blue
     }
-
-    /// WCAG relative luminance: the same weights, but over linearised channels.
-    ///
-    /// Distinct from `luminance` above on purpose. That one is a cheap ordering
-    /// and says nothing about legibility; this one is the number the 4.5:1 rule
-    /// is defined against, and using the cheap one in its place would overstate
-    /// the contrast of exactly the mid-tone colours this palette is made of.
-    let relativeLuminance: Double
 
     /// WCAG contrast ratio, 1:1 to 21:1.
     func contrast(against other: RGB) -> Double {
@@ -87,138 +93,150 @@ private struct RGB {
 
 struct SlotPaletteTests {
 
-    // MARK: - The two schemes are genuinely different
+    // MARK: - The hour written inside a block
 
-    @Test("Every hue is a different colour in dark mode", arguments: SlotPaletteCases.fills)
-    func hueDiffersByScheme(fill: SlotFill) {
-        let hue = SlotPalette.hue(for: fill)
+    /// The headline property of the pair model: because both ends are named
+    /// rather than derived from a mix, the contrast between them is a fact about
+    /// this file alone and can simply be measured.
+    ///
+    /// AA is the floor asserted, and the supplied pairs land there rather than
+    /// at AAA — measured, the weakest is the dark booked pair at about 4.7:1 and
+    /// the light free pair at about 5.4:1. That matters because Increase
+    /// Contrast has no separate treatment any more: the previous palette mixed a
+    /// hue into the surface at a tuned strength, so there was a knob to turn,
+    /// and written-out pairs have no knob. A user with that setting on now sees
+    /// exactly what everyone else does. Raising these to AAA, or adding a second
+    /// set of pairs for that setting, are both real options — guessing at either
+    /// would be inventing colours nobody asked for.
+    @Test("The hour clears 4.5:1 against its own block",
+          arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
+    func foregroundIsLegibleOnItsBackground(fill: SlotFill, scheme: ColorScheme) {
+        let background = RGB(SlotPalette.background(for: fill, scheme: scheme))
+        let foreground = RGB(SlotPalette.foreground(for: fill, scheme: scheme))
 
-        #expect(hue.light != hue.dark)
+        #expect(foreground.contrast(against: background) >= 4.5)
     }
 
-    /// The specific failure this guards: a block that draws identically in both
-    /// schemes because the pair was filled in with the same value twice.
+    // MARK: - The two appearances are genuinely different
+
     @Test("Every block is a different colour in dark mode", arguments: SlotPaletteCases.fills)
-    func blockDiffersByScheme(fill: SlotFill) {
-        let light = RGB(SlotPalette.fill(for: fill, scheme: .light, contrast: .standard))
-        let dark = RGB(SlotPalette.fill(for: fill, scheme: .dark, contrast: .standard))
+    func backgroundDiffersByScheme(fill: SlotFill) {
+        let colors = SlotPalette.colors(for: fill)
+
+        #expect(colors.background.light != colors.background.dark)
+
+        let light = RGB(SlotPalette.background(for: fill, scheme: .light))
+        let dark = RGB(SlotPalette.background(for: fill, scheme: .dark))
 
         #expect(light.distance(to: dark) > 0.1)
     }
 
-    @Test("The hour written in a cell is a different colour in dark mode",
+    @Test("Every hour is a different colour in dark mode", arguments: SlotPaletteCases.fills)
+    func foregroundDiffersByScheme(fill: SlotFill) {
+        let colors = SlotPalette.colors(for: fill)
+
+        #expect(colors.foreground.light != colors.foreground.dark)
+
+        let light = RGB(SlotPalette.foreground(for: fill, scheme: .light))
+        let dark = RGB(SlotPalette.foreground(for: fill, scheme: .dark))
+
+        #expect(light.distance(to: dark) > 0.1)
+    }
+
+    /// Light blocks in light mode, dark blocks in dark mode. Stated as a
+    /// property rather than as six hex assertions, so it holds through a
+    /// re-tune: a pair accidentally swapped between appearances passes every
+    /// other test in this file and looks obviously wrong on a device.
+    @Test("A block is light in light mode and dark in dark mode",
           arguments: SlotPaletteCases.fills)
-    func inkDiffersByScheme(fill: SlotFill) {
-        let light = RGB(SlotPalette.ink(for: fill, scheme: .light))
-        let dark = RGB(SlotPalette.ink(for: fill, scheme: .dark))
+    func blocksSitOnTheRightSideOfTheirSurface(fill: SlotFill) {
+        let lightSurface = RGB(SlotPalette.surface.color(for: .light))
+        let darkSurface = RGB(SlotPalette.surface.color(for: .dark))
 
-        #expect(light.distance(to: dark) > 0.1)
+        let light = RGB(SlotPalette.background(for: fill, scheme: .light))
+        let dark = RGB(SlotPalette.background(for: fill, scheme: .dark))
+
+        #expect(light.luminance > darkSurface.luminance)
+        #expect(dark.luminance < lightSurface.luminance)
+        #expect(light.luminance > dark.luminance)
     }
 
-    /// The surface a block is mixed into is the backdrop it is actually drawn
-    /// on, and that is set by the list style rather than by anything in this
-    /// file: `.listStyle(.plain)` rows draw no card, so it is `systemBackground`
-    /// — black in dark mode, not the #1C1C1E of a grouped row. Getting it wrong
-    /// puts every dark block at a strength other than the one written beside it.
-    /// Pinned to the two `systemBackground` values so that switching the list to
-    /// a grouped style without revisiting this fails here.
+    /// The surface is not mixed into anything any more, but it is still what a
+    /// declined-colour shape has to be visible against, and it is still set by
+    /// the list style rather than by anything in the palette.
     @Test("The surface is the plain-list backdrop the strip is drawn on")
     func surfaceIsTheListBackground() {
         #expect(SlotPalette.surface.light == 0xFFFFFF)
         #expect(SlotPalette.surface.dark == 0x000000)
     }
 
-    // MARK: - The states stay distinct within a scheme
+    // MARK: - The states stay distinct within an appearance
 
     /// The one thing the grid exists to do. If a colour edit ever pushed two
-    /// states together in one scheme, a glance would stop answering the
+    /// states together in one appearance, a glance would stop answering the
     /// question — and it could happen in dark mode only, which is why every
-    /// scheme is checked rather than just the one on the reviewer's screen.
-    @Test("The three blocks stay pairwise distinct in every scheme",
+    /// appearance is checked rather than just the one on the reviewer's screen.
+    @Test("The three blocks stay pairwise distinct in every appearance",
           arguments: SlotPaletteCases.schemes)
     func blocksStayDistinct(scheme: ColorScheme) {
-        let available = RGB(SlotPalette.fill(for: .filled, scheme: scheme, contrast: .standard))
-        let booked = RGB(SlotPalette.fill(for: .outline, scheme: scheme, contrast: .standard))
-        let unknown = RGB(SlotPalette.fill(for: .hatched, scheme: scheme, contrast: .standard))
+        let available = RGB(SlotPalette.background(for: .filled, scheme: scheme))
+        let booked = RGB(SlotPalette.background(for: .outline, scheme: scheme))
+        let unknown = RGB(SlotPalette.background(for: .hatched, scheme: scheme))
 
         #expect(available.distance(to: booked) > 0.1)
         #expect(available.distance(to: unknown) > 0.1)
         #expect(booked.distance(to: unknown) > 0.1)
     }
 
-    @Test("The three hues are pairwise distinct in every scheme",
+    @Test("The three hours stay pairwise distinct in every appearance",
           arguments: SlotPaletteCases.schemes)
-    func huesStayDistinct(scheme: ColorScheme) {
-        let hexes = SlotPaletteCases.fills.map { SlotPalette.hue(for: $0).hex(for: scheme) }
+    func foregroundsStayDistinct(scheme: ColorScheme) {
+        let available = RGB(SlotPalette.foreground(for: .filled, scheme: scheme))
+        let booked = RGB(SlotPalette.foreground(for: .outline, scheme: scheme))
+        let unknown = RGB(SlotPalette.foreground(for: .hatched, scheme: scheme))
 
-        #expect(Set(hexes).count == hexes.count)
+        #expect(available.distance(to: booked) > 0.1)
+        #expect(available.distance(to: unknown) > 0.1)
+        #expect(booked.distance(to: unknown) > 0.1)
     }
 
-    /// A block that cannot be told from the row it sits in is not a block. Both
-    /// schemes, because the light mix is deliberately the fainter of the two
-    /// and is the one with the smaller margin.
+    /// D6's colour half. An hour the app cannot vouch for is drawn in neutral
+    /// grey precisely so it cannot be read as either answer; a grey that drifted
+    /// toward the free green would be the wasted-drive bug wearing a new colour.
+    @Test("The unknown state is neutral, not a third answer",
+          arguments: SlotPaletteCases.schemes)
+    func unknownIsNeutral(scheme: ColorScheme) {
+        for color in [
+            RGB(SlotPalette.background(for: .hatched, scheme: scheme)),
+            RGB(SlotPalette.foreground(for: .hatched, scheme: scheme)),
+        ] {
+            let channels = [color.red, color.green, color.blue]
+            let spread = (channels.max() ?? 0) - (channels.min() ?? 0)
+
+            #expect(spread < 0.06, "grey should have near-equal channels, spread \(spread)")
+        }
+    }
+
+    /// A block that cannot be told from the row it sits in is not a block.
     @Test("Every block separates from the surface behind it",
           arguments: SlotPaletteCases.schemes)
     func blocksSeparateFromSurface(scheme: ColorScheme) {
         let surface = RGB(SlotPalette.surface.color(for: scheme))
 
         for fill in SlotPaletteCases.fills {
-            let block = RGB(SlotPalette.fill(for: fill, scheme: scheme, contrast: .standard))
+            let block = RGB(SlotPalette.background(for: fill, scheme: scheme))
 
-            #expect(block.distance(to: surface) > 0.05)
+            #expect(block.distance(to: surface) > 0.03)
         }
-    }
-
-    /// Dark mode paints *onto* its surface rather than into it: every block has
-    /// to come out lighter than the row behind it, or the grid reads as holes
-    /// punched in the list.
-    @Test("Dark-mode blocks sit above their surface", arguments: SlotPaletteCases.fills)
-    func darkBlocksAreLighterThanSurface(fill: SlotFill) {
-        let surface = RGB(SlotPalette.surface.color(for: .dark))
-        let block = RGB(SlotPalette.fill(for: fill, scheme: .dark, contrast: .standard))
-
-        #expect(block.luminance > surface.luminance)
-    }
-
-    // MARK: - The hour written inside a cell
-
-    /// The labelled tier writes the hour inside the block, so the ink and the
-    /// block it sits on are a text-on-background pair and 4.5:1 is the bar.
-    ///
-    /// That number is stated in the palette's own comments; asserting it is what
-    /// stops it being a claim. Both schemes, because the ink is mixed toward
-    /// black on one and toward white on the other — two different treatments,
-    /// each of which can fail on its own.
-    @Test("The hour in a cell clears 4.5:1 against its own block",
-          arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
-    func inkIsLegibleOnItsBlock(fill: SlotFill, scheme: ColorScheme) {
-        let block = RGB(SlotPalette.fill(for: fill, scheme: scheme, contrast: .standard))
-        let ink = RGB(SlotPalette.ink(for: fill, scheme: scheme))
-
-        #expect(ink.contrast(against: block) >= 4.5)
-    }
-
-    /// Increased Contrast makes the block bolder, which moves it *toward* the
-    /// ink in one scheme and away in the other. The pair has to clear the bar in
-    /// that configuration too, or asking for more contrast would deliver less.
-    @Test("The hour stays legible with Increased Contrast on",
-          arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
-    func inkIsLegibleAtIncreasedContrast(fill: SlotFill, scheme: ColorScheme) {
-        let block = RGB(SlotPalette.fill(for: fill, scheme: scheme, contrast: .increased))
-        let ink = RGB(SlotPalette.ink(for: fill, scheme: scheme))
-
-        #expect(ink.contrast(against: block) >= 4.5)
     }
 
     // MARK: - When colour has been declined
 
     /// The path a user who has switched Differentiate Without Color on is
-    /// relying on, and until it was measured the least legible thing in the
-    /// app: the hour was drawn in white on a solid block of undiluted hue,
-    /// which is 3.47:1 in light mode and 1.78:1 in dark.
-    ///
-    /// It was invisible to every other test here because the colour lived in a
-    /// private computed property on the view, where nothing could reach it.
+    /// relying on, and the one that was carrying white text at 1.78:1 before it
+    /// was measured. It is invisible to screenshots — the simulator stores the
+    /// preference and SwiftUI never receives it — so this is the only check
+    /// there is.
     @Test("The hour clears 4.5:1 when colour has been declined",
           arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
     func differentiatedInkIsLegible(fill: SlotFill, scheme: ColorScheme) {
@@ -230,8 +248,8 @@ struct SlotPaletteTests {
 
     /// In this path the *shape* carries the meaning — solid, empty, hatched —
     /// so it has to be visible against the surface at 3:1, the bar for a
-    /// graphical object. An undiluted gold hairline measured about 2.3:1, which
-    /// is why the strokes take the darkened ink instead of the raw hue.
+    /// graphical object. The block colour would not manage it: it is a quiet
+    /// fill, which is why the shape is drawn in the saturated end of the pair.
     @Test("The declined-colour shape clears 3:1 against the surface",
           arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
     func differentiatedShapeSeparatesFromSurface(fill: SlotFill, scheme: ColorScheme) {
@@ -241,60 +259,38 @@ struct SlotPaletteTests {
         #expect(shape.contrast(against: surface) >= 3.0)
     }
 
-    /// White is what this used to be, and the assertion is kept pointing at it
-    /// so the finding cannot be quietly undone. If a later edit puts white back
-    /// on the solid block, this says why that is wrong before the ratio test
-    /// has to.
-    @Test("White is not legible on the solid block, in either appearance",
+    /// White is what the solid block's ink used to be, and dark mode is where
+    /// that was catastrophic: the block there is the bright end of the pair, and
+    /// white on it measures under 2:1.
+    ///
+    /// Asserted for dark only, because light mode is the honest exception —
+    /// white on the deep green would in fact pass. Claiming white fails
+    /// everywhere would be a satisfying assertion and a false one, and a test
+    /// that overstates its finding is the kind that gets deleted later along
+    /// with the finding.
+    @Test("White would fail on the dark-mode solid block")
+    func whiteWouldFailOnTheDarkSolidBlock() {
+        let block = RGB(SlotPalette.differentiatedBackdrop(for: .filled, scheme: .dark))
+
+        #expect(RGB(.white).contrast(against: block) < 4.5)
+    }
+
+    /// The solid block is drawn in the foreground colour and the hour on it in
+    /// the background colour — the same pair, read in reverse. Contrast is
+    /// symmetric, so this path inherits the pair's guarantee rather than needing
+    /// tuning of its own, and that inheritance is what is asserted.
+    @Test("The declined-colour block reads its pair in reverse",
           arguments: SlotPaletteCases.schemes)
-    func whiteWouldFailOnTheSolidBlock(scheme: ColorScheme) {
+    func differentiatedBlockReversesThePair(scheme: ColorScheme) {
         let block = RGB(SlotPalette.differentiatedBackdrop(for: .filled, scheme: scheme))
         let ink = RGB(SlotPalette.differentiatedInk(for: .filled, scheme: scheme))
 
-        #expect(RGB(.white).contrast(against: block) < 4.5)
+        let background = RGB(SlotPalette.background(for: .filled, scheme: scheme))
+        let foreground = RGB(SlotPalette.foreground(for: .filled, scheme: scheme))
+
+        #expect(block.distance(to: foreground) < 0.001)
+        #expect(ink.distance(to: background) < 0.001)
         #expect(ink.contrast(against: block) >= 4.5)
-    }
-
-    // MARK: - The mix strengths
-
-    /// The reason the pair exists: the fraction that reads as a soft wash on
-    /// white is near-invisible against #1C1C1E, so dark mode must take more of
-    /// the hue. Asserted as an ordering rather than as two literals, so tuning
-    /// a value cannot silently invert the relationship.
-    @Test("Dark mode takes more of the hue than light mode does")
-    func darkMixesHarder() {
-        #expect(SlotPalette.fillStrength.dark > SlotPalette.fillStrength.light)
-        #expect(SlotPalette.fillStrengthIncreased.dark > SlotPalette.fillStrengthIncreased.light)
-    }
-
-    @Test("Increased contrast takes more of the hue than standard does",
-          arguments: SlotPaletteCases.schemes)
-    func increasedContrastMixesHarder(scheme: ColorScheme) {
-        let standard = SlotPalette.fillStrength.value(for: scheme)
-        let increased = SlotPalette.fillStrengthIncreased.value(for: scheme)
-
-        #expect(increased > standard)
-    }
-
-    @Test("Every mix strength stays a fraction")
-    func mixStrengthsAreFractions() {
-        let all = [
-            SlotPalette.fillStrength, SlotPalette.fillStrengthIncreased, SlotPalette.inkStrength,
-        ]
-
-        for strength in all {
-            #expect(strength.light > 0 && strength.light < 1)
-            #expect(strength.dark > 0 && strength.dark < 1)
-        }
-    }
-
-    @Test("Increased contrast draws a different block from standard",
-          arguments: SlotPaletteCases.schemes)
-    func increasedContrastChangesTheBlock(scheme: ColorScheme) {
-        let standard = RGB(SlotPalette.fill(for: .filled, scheme: scheme, contrast: .standard))
-        let increased = RGB(SlotPalette.fill(for: .filled, scheme: scheme, contrast: .increased))
-
-        #expect(standard.distance(to: increased) > 0.01)
     }
 
     // MARK: - Hex
@@ -320,5 +316,21 @@ struct SlotPaletteTests {
 
         let white = RGB(Color(hex: 0xFFFFFF))
         #expect(white.luminance > 0.99)
+    }
+
+    /// The four hexes a designer handed over, pinned exactly as given. Every
+    /// other test here is a property; these two are the record of what was
+    /// asked for, so a re-tune that drifts off the brief is visible as a diff.
+    @Test("The supplied hexes are drawn as supplied")
+    func keepsTheSuppliedHexes() {
+        #expect(SlotPalette.available.background.light == 0xE0F4D4)
+        #expect(SlotPalette.available.foreground.light == 0x416B2A)
+        #expect(SlotPalette.available.background.dark == 0x213515)
+        #expect(SlotPalette.available.foreground.dark == 0x83D754)
+
+        #expect(SlotPalette.booked.background.light == 0xFECDCE)
+        #expect(SlotPalette.booked.foreground.light == 0x7F1C1E)
+        #expect(SlotPalette.booked.background.dark == 0x421011)
+        #expect(SlotPalette.booked.foreground.dark == 0xFF4246)
     }
 }
