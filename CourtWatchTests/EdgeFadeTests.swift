@@ -25,8 +25,12 @@ import Testing
 /// outside the enclosing actor.
 nonisolated enum EdgeFadeCases {
 
-    /// A phone-width row with a whole day in it: sixteen cells at 72 points
-    /// with 6-point gaps comes to 1242, against roughly 274 visible.
+    /// A phone-width row with a whole day in it: sixteen cells at 43 points
+    /// with 4-point gaps comes to 748, against roughly 274 visible.
+    ///
+    /// Derived rather than written out, so that re-sizing the block re-sizes
+    /// these cases with it instead of leaving them asserting a row that no
+    /// longer exists.
     static let contentWidth: Double = StripLayout.contentWidth(slotCount: 16)
     static let containerWidth: Double = 274
 

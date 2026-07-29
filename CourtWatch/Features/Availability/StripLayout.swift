@@ -44,7 +44,13 @@ nonisolated enum StripLayout: Hashable, Sendable, Comparable {
     case list
 }
 
-extension StripLayout {
+/// Everything below is `nonisolated` for the same reason the type is: this
+/// module defaults to main-actor isolation, and an extension does not inherit
+/// the annotation from the type it extends. Without it the *default parameter
+/// values* — `= defaultCellWidth`, `= defaultSpacing` — are main-actor
+/// expressions, and any `nonisolated` caller that omits an argument fails to
+/// compile. Test argument lists are exactly that caller.
+nonisolated extension StripLayout {
 
     // MARK: - Cell geometry
     //

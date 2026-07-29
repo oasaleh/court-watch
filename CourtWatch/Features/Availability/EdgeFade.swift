@@ -100,7 +100,10 @@ nonisolated struct EdgeFade: Equatable, Sendable {
     }
 }
 
-extension EdgeFade {
+/// `nonisolated` for the same reason the type is: this module defaults to
+/// main-actor isolation and an extension does not inherit the annotation from
+/// the type it extends.
+nonisolated extension EdgeFade {
 
     /// Where the fade finishes, as a fraction of the row's width.
     ///
