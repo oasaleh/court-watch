@@ -32,6 +32,10 @@ Green is open, red is taken, and every block writes its own hour inside itself.
 There is no hour ruler above the rows any more: a ruler could only label every
 few columns, which left two cells in three to be counted across.
 
+The edges of a row fade rather than cutting off, and only where there is
+something past them — a row already at its start does not dim its first hour,
+and a row short enough to fit dims neither end.
+
 | Light | Dark |
 |---|---|
 | ![Unfiltered, light](screenshots/day-now-light.png) | ![Unfiltered, dark](screenshots/day-now-dark.png) |

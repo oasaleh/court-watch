@@ -80,8 +80,17 @@ struct FacilityAvailabilitySection: View {
     let layout: StripLayout
 
     /// Matches the strip's own cell height so the pinned numbers line up with
-    /// the rows they name.
-    @ScaledMetric(relativeTo: .caption) private var rowHeight: CGFloat = 34
+    /// the rows they name. Both read the same constant rather than each holding
+    /// a number that has to agree with the other's.
+    @ScaledMetric(relativeTo: .caption2) private var rowHeight: CGFloat =
+        StripLayout.defaultCellHeight
+
+    /// How much of each edge is currently faded out.
+    ///
+    /// Driven by the scroll position rather than fixed, because a fade that is
+    /// always on dims the first hour of a row nobody has scrolled and the last
+    /// hour of a row that fits. See `EdgeFade`.
+    @State private var fade: EdgeFade = .none
 
     var body: some View {
         Section {
@@ -138,13 +147,43 @@ struct FacilityAvailabilitySection: View {
                     }
                 }
             }
-            // The hours are already read out cell by cell, each announcing its
-            // court and its time. Letting VoiceOver treat this as a scroll view
-            // as well would add a container to swipe through that says nothing.
-            .scrollClipDisabled(false)
+            // The edges fade rather than cutting. Applied to the scroll view
+            // alone, so the pinned court numbers beside it stay at full
+            // strength — they are not the thing that continues off-screen.
+            .mask(fadeMask)
+            .onScrollGeometryChange(for: EdgeFade.self) { geometry in
+                EdgeFade.resolve(
+                    offset: geometry.contentOffset.x,
+                    contentWidth: geometry.contentSize.width,
+                    containerWidth: geometry.containerSize.width
+                )
+            } action: { _, updated in
+                fade = updated
+            }
         }
         .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 0))
         .listRowSeparator(.hidden)
+    }
+
+    /// Opaque through the middle, falling away at whichever edge has more of the
+    /// day behind it.
+    ///
+    /// The stops are built from the fade rather than fixed, so an edge with
+    /// nothing past it stays fully opaque and costs nothing: at `leading == 0`
+    /// the first stop is solid and the gradient is flat across the whole row.
+    private var fadeMask: some View {
+        let band = fade.bandFraction
+
+        return LinearGradient(
+            stops: [
+                .init(color: .black.opacity(1 - fade.leading), location: 0),
+                .init(color: .black, location: band),
+                .init(color: .black, location: 1 - band),
+                .init(color: .black.opacity(1 - fade.trailing), location: 1),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
     }
 
     /// The pinned leading column: one number per court, aligned to its row.
@@ -156,7 +195,7 @@ struct FacilityAvailabilitySection: View {
         VStack(alignment: .leading, spacing: StripLayout.defaultSpacing) {
             ForEach(facility.courts) { court in
                 Text(courtLabel(for: court))
-                    .font(.caption)
+                    .font(.caption2)
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)

@@ -65,13 +65,14 @@ struct AvailabilityStrip: View {
 
     /// Grows with the user's text size rather than staying pinned, so the row
     /// gets taller before it is abandoned altogether at accessibility sizes.
-    @ScaledMetric(relativeTo: .caption) private var cellHeight: CGFloat = 34
+    @ScaledMetric(relativeTo: .caption2) private var cellHeight: CGFloat =
+        StripLayout.defaultCellHeight
 
     /// The cell grows with the text inside it, which is new: the width used to
     /// be whatever sixteen cells could share, so it could not respond to type
     /// size at all. Now that the row scrolls, a larger text size makes wider
     /// cells and a longer row rather than smaller text in a fixed box.
-    @ScaledMetric(relativeTo: .caption) private var cellWidth: CGFloat =
+    @ScaledMetric(relativeTo: .caption2) private var cellWidth: CGFloat =
         StripLayout.defaultCellWidth
 
     var body: some View {
@@ -197,7 +198,8 @@ private struct SlotCell: View {
 
     @ViewBuilder
     private var shape: some View {
-        let rectangle = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        let rectangle = RoundedRectangle(
+            cornerRadius: StripLayout.defaultCornerRadius, style: .continuous)
 
         if differentiateWithoutColor {
             // Colour has been declined, so meaning goes back to ink density:
@@ -240,19 +242,19 @@ private struct SlotCell: View {
     /// The symbol comes back only when colour has been declined, where it is the
     /// thing doing the work rather than decoration.
     private var mark: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 1) {
             if differentiateWithoutColor {
                 Image(systemName: appearance.symbolName)
-                    .font(.caption2.bold())
+                    .font(.system(size: 8, weight: .bold))
             }
 
             Text(slot.displayString)
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(StripLayout.captionWeight))
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(StripLayout.minimumTextScale)
         }
         .foregroundStyle(markTint)
-        .padding(.horizontal, 3)
+        .padding(.horizontal, StripLayout.defaultCellPadding)
     }
 
     /// What the shape is drawn with once colour has been declined.

@@ -46,31 +46,81 @@ nonisolated enum StripLayout: Hashable, Sendable, Comparable {
 
 extension StripLayout {
 
+    // MARK: - Cell geometry
+    //
+    // Taken from a calendar's event chips rather than invented. Measured off the
+    // reference at 91 × 74 with a 7-point horizontal gap, an 8-point vertical
+    // one, and a corner radius of about 5 — in that screenshot's pixels, which
+    // are 2× device points. So the numbers below are those measurements halved,
+    // and the aspect ratio, gap fraction and radius fraction all carry over
+    // unchanged.
+    //
+    // The width is no longer set by the text. It used to be: at 72 points a cell
+    // could hold "12:30 PM" outright. At 43 it holds a whole hour — which is
+    // what this endpoint publishes and every captured payload contains — and
+    // scales a half-hour down to fit. `cellFitsAWholeHour` pins the first and
+    // `cellFitsAHalfHourWhenScaled` the second, so the relationship between the
+    // width, the font, the padding and the scale floor is checked rather than
+    // assumed to still hold.
+
     /// The court-number column at the leading edge of every row.
     ///
     /// Pinned outside the scroll view now rather than being the first thing in
-    /// the row, so it stays on screen while the hours move under it. A default
-    /// rather than a constant reached for from a drawing file, so a test can
-    /// state the geometry it is asserting instead of inheriting it.
-    static let defaultLabelWidth: Double = 40
+    /// the row, so it stays on screen while the hours move under it. Narrower
+    /// than it was: a 40-point column beside a 43-point cell read as a second
+    /// column of content rather than as a label.
+    static let defaultLabelWidth: Double = 24
 
-    /// The gap between two cells.
+    /// The gap between two cells, in both directions.
     ///
-    /// Wider than it was. It used to be 3 points because at sixteen cells
-    /// sharing one screen every point between them was a point taken off all of
-    /// them; nothing is being shared now, so the gap can be what actually reads
-    /// as a gap.
-    static let defaultSpacing: Double = 6
+    /// The reference's 7 and 8 pixels at 2×, which come to 3.5 and 4.
+    static let defaultSpacing: Double = 4
 
     /// What one cell gets, in points, before Dynamic Type scaling.
+    static let defaultCellWidth: Double = 43
+
+    /// How tall a cell is, before Dynamic Type scaling.
     ///
-    /// Sized to carry the longest hour this app draws. `SlotTime.displayString`
-    /// renders a whole hour as "12 PM" and anything else as "12:30 PM", and the
-    /// captured data is hourly — but the wider form is what the type can
-    /// produce, so it is what the cell is sized for. A cell that fits the common
-    /// case and truncates the other is a cell that silently drops a colon on the
-    /// one day a facility publishes half-hours.
-    static let defaultCellWidth: Double = 72
+    /// Shared with `FacilityAvailabilitySection`, which sizes the pinned court
+    /// numbers to match. They were two independent numbers that had to agree,
+    /// which is the sort of pair that silently stops agreeing.
+    static let defaultCellHeight: Double = 35
+
+    /// The corner radius of a cell: the reference's 5 pixels at 2×.
+    static let defaultCornerRadius: Double = 3
+
+    /// The breathing room either side of the hour inside a cell.
+    ///
+    /// Named because it is load-bearing at this width: it is the difference
+    /// between the cell and the space the text actually gets, and the tests
+    /// measure against that space rather than the cell.
+    static let defaultCellPadding: Double = 2
+
+    /// How far the hour may shrink before it would rather truncate.
+    ///
+    /// Matches the `minimumScaleFactor` the cell applies. Named so a test can
+    /// ask whether the longest string the app can print still fits at the floor,
+    /// which is the question the width is chosen to answer.
+    static let minimumTextScale: Double = 0.7
+
+    /// The point size `.caption2` resolves to at the default text size.
+    ///
+    /// Written down so the fit can be measured. Dynamic Type moves it, and the
+    /// cell scales with it — the check below is that the two are in proportion
+    /// at the size everything is designed around.
+    static let captionPointSize: Double = 11
+
+    /// The weight the hour is drawn at.
+    ///
+    /// Regular, after the reference: a calendar chip sets the event's *name*
+    /// in semibold and its *time* in regular, and the hour in this grid is the
+    /// time rather than the title. It was semibold, which at 11 points on a
+    /// saturated block read as heavier than anything else on the screen.
+    ///
+    /// Named rather than left in the view because the fit tests measure with it.
+    /// A weight is a width: changing this changes whether the hour fits, and the
+    /// two would otherwise be separate decisions that had to agree.
+    static let captionWeight: Font.Weight = .regular
 
     /// The text size at which no cell width rescues a sixteen-column strip.
     static let listThreshold: DynamicTypeSize = .accessibility3

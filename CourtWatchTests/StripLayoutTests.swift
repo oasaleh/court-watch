@@ -24,6 +24,7 @@
 
 import SwiftUI
 import Testing
+import UIKit
 
 @testable import CourtWatch
 
@@ -202,13 +203,86 @@ struct StripLayoutTests {
 
     // MARK: - The geometry the drawing code shares
 
-    /// The cell has to be wide enough for the longest hour the app can print.
-    /// `SlotTime.displayString` renders a whole hour as "12 PM" and anything
-    /// else as "12:30 PM"; the captured data is hourly, but the wider form is
-    /// what the type can produce and so what the cell is sized for.
-    @Test("A cell is wide enough to write an hour in")
-    func cellCarriesAnHour() {
-        #expect(StripLayout.defaultCellWidth >= 64)
+    /// The width is set by the calendar reference now, not by the text, so
+    /// whether the hour still fits has to be measured rather than assumed. This
+    /// is the assertion that used to read `defaultCellWidth >= 64` — true when
+    /// the width came from the string, meaningless once it came from a chip.
+    ///
+    /// Measured at a fixed point size rather than `preferredFont`, so the test
+    /// states the default text size it is about instead of inheriting whatever
+    /// the runner is set to. The weight is checked against the constant the cell
+    /// draws with first: a heavier weight is a wider string, so a measurement
+    /// taken at the wrong one would pass while the real text overflowed.
+    @Test("A cell fits a whole hour without shrinking it")
+    func cellFitsAWholeHour() {
+        #expect(StripLayout.captionWeight == .regular, "the measurement below assumes it")
+
+        let font = UIFont.systemFont(ofSize: StripLayout.captionPointSize, weight: .regular)
+        let room = StripLayout.defaultCellWidth - 2 * StripLayout.defaultCellPadding
+
+        for text in ["7 AM", "10 AM", "12 PM", "11 PM"] {
+            let width = (text as NSString).size(withAttributes: [.font: font]).width
+
+            #expect(width <= room, "\(text) needs \(width)pt, the cell gives \(room)pt")
+        }
+    }
+
+    /// The endpoint publishes whole hours and every captured payload contains
+    /// only those, but `SlotTime.displayString` will render "12:30 PM" the day
+    /// one does not. It has to survive that — shrunk, but not truncated — and
+    /// the floor it shrinks to is the one the cell actually applies.
+    @Test("A half-hour still fits once it is allowed to shrink")
+    func cellFitsAHalfHourWhenScaled() {
+        let size = StripLayout.captionPointSize * StripLayout.minimumTextScale
+        let font = UIFont.systemFont(ofSize: size, weight: .regular)
+        let room = StripLayout.defaultCellWidth - 2 * StripLayout.defaultCellPadding
+
+        for text in ["12:30 PM", "10:30 AM"] {
+            let width = (text as NSString).size(withAttributes: [.font: font]).width
+
+            #expect(width <= room, "\(text) needs \(width)pt at the floor, cell gives \(room)pt")
+        }
+    }
+
+    /// The block is proportioned after a calendar's event chips, measured at
+    /// 91 × 74 with a 7-pixel gap and a corner radius of about 5 — in that
+    /// screenshot's pixels, which are 2× device points. The ratios are what is
+    /// asserted, because they are what survives the conversion.
+    ///
+    /// A tolerance rather than an equality, because the points are the halved
+    /// measurements rounded to whole numbers. Asserting the arithmetic exactly
+    /// would be asserting the rounding.
+    @Test("A cell keeps the reference's near-square proportions")
+    func cellMatchesTheReferenceAspect() {
+        let referenceAspect = 91.0 / 74.0
+        let aspect = StripLayout.defaultCellWidth / StripLayout.defaultCellHeight
+
+        #expect(abs(aspect - referenceAspect) < 0.05, "aspect \(aspect)")
+    }
+
+    /// The old block was 34 points tall against 72 wide — a ratio above two,
+    /// which read as a row of tags rather than as blocks of time. Pinned as an
+    /// upper bound so a later tidy-up cannot quietly flatten them again.
+    @Test("A cell is a block rather than a tag")
+    func cellIsNotFlat() {
+        #expect(StripLayout.defaultCellWidth / StripLayout.defaultCellHeight < 1.5)
+    }
+
+    @Test("The gap is about a twelfth of a cell, as in the reference")
+    func gapMatchesTheReference() {
+        let referenceGap = 7.0 / 91.0
+        let gap = StripLayout.defaultSpacing / StripLayout.defaultCellWidth
+
+        #expect(abs(gap - referenceGap) < 0.03, "gap ratio \(gap)")
+    }
+
+    @Test("The corner radius is a small fraction of the cell, as in the reference")
+    func cornerRadiusMatchesTheReference() {
+        let referenceRadius = 5.0 / 91.0
+        let radius = StripLayout.defaultCornerRadius / StripLayout.defaultCellWidth
+
+        #expect(abs(radius - referenceRadius) < 0.03, "radius ratio \(radius)")
+        #expect(StripLayout.defaultCornerRadius * 2 < StripLayout.defaultCellHeight)
     }
 
     /// The pinned column and the gaps are shared between the strip and the
@@ -219,6 +293,7 @@ struct StripLayoutTests {
     func exposesItsGeometry() {
         #expect(StripLayout.defaultLabelWidth > 0)
         #expect(StripLayout.defaultSpacing > 0)
+        #expect(StripLayout.defaultCellHeight > 0)
 
         let width = StripLayout.contentWidth(
             slotCount: 4, cellWidth: 100, spacing: 10)
