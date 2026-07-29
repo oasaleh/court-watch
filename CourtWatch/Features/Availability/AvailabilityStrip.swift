@@ -211,22 +211,26 @@ private struct SlotCell: View {
             // Colour has been declined, so meaning goes back to ink density:
             // solid, empty and hatched are three different amounts of ink and
             // stay distinct with every hue removed.
+            //
+            // The strokes are drawn in the palette's darkened ink rather than
+            // the raw hue. A hairline of undiluted gold measured about 2.3:1
+            // against white, and in this path the shape *is* the meaning.
             switch appearance.fill {
             case .filled:
-                rectangle.fill(tint)
+                rectangle.fill(shapeTint)
 
             case .outline:
-                rectangle.strokeBorder(tint, lineWidth: 2)
+                rectangle.strokeBorder(shapeTint, lineWidth: 2)
 
             case .hatched:
                 rectangle
-                    .fill(tint.opacity(0.12))
+                    .fill(shapeTint.opacity(0.12))
                     .overlay {
                         DiagonalHatch()
-                            .stroke(tint, lineWidth: 1.5)
+                            .stroke(shapeTint, lineWidth: 1.5)
                             .clipShape(rectangle)
                     }
-                    .overlay { rectangle.strokeBorder(tint, lineWidth: 2) }
+                    .overlay { rectangle.strokeBorder(shapeTint, lineWidth: 2) }
             }
         } else {
             // A single tinted block, no edge and no border.
@@ -282,27 +286,24 @@ private struct SlotCell: View {
         }
     }
 
-    /// Green is free, red is taken, amber is unknown — in whichever pair of
-    /// values `SlotPalette` holds for the scheme this cell is drawn in.
-    ///
-    /// Hue is the primary channel here by explicit choice, which is why the
-    /// density treatment above is kept and reinstated the moment the system
-    /// reports that colour should not be relied on.
-    private var tint: Color {
-        SlotPalette.tint(for: appearance.fill, scheme: colorScheme)
+    /// What the shape is drawn with once colour has been declined: full-
+    /// strength hue for the solid block, darkened ink for the hairlines.
+    private var shapeTint: Color {
+        SlotPalette.differentiatedShape(for: appearance.fill, scheme: colorScheme)
     }
 
-    /// Drawn on top of a block, so it has to contrast with it.
+    /// Drawn on top of a cell, so it has to contrast with whatever that cell
+    /// drew — and the two paths draw very different things, so each gets its
+    /// own answer from the palette.
     ///
-    /// White works on a full-strength fill. On the muted Calendar-style wash it
-    /// would vanish, so there the hue itself is the ink — which is the whole
-    /// point of that treatment: quiet surface, confident text.
+    /// On the muted wash the hue itself is the ink: quiet surface, confident
+    /// text. On the declined-colour path it sits on a solid block of undiluted
+    /// hue instead, where white — which this used to be — measured 1.78:1 in
+    /// dark mode.
     private var markTint: Color {
-        if differentiateWithoutColor {
-            return appearance.fill == .filled ? .white : tint
-        }
-
-        return layout == .labeled ? strongInk : .white
+        differentiateWithoutColor
+            ? SlotPalette.differentiatedInk(for: appearance.fill, scheme: colorScheme)
+            : strongInk
     }
 
     /// The hue, pushed far enough toward the text colour to stay legible on its

@@ -210,6 +210,51 @@ struct SlotPaletteTests {
         #expect(ink.contrast(against: block) >= 4.5)
     }
 
+    // MARK: - When colour has been declined
+
+    /// The path a user who has switched Differentiate Without Color on is
+    /// relying on, and until it was measured the least legible thing in the
+    /// app: the hour was drawn in white on a solid block of undiluted hue,
+    /// which is 3.47:1 in light mode and 1.78:1 in dark.
+    ///
+    /// It was invisible to every other test here because the colour lived in a
+    /// private computed property on the view, where nothing could reach it.
+    @Test("The hour clears 4.5:1 when colour has been declined",
+          arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
+    func differentiatedInkIsLegible(fill: SlotFill, scheme: ColorScheme) {
+        let backdrop = RGB(SlotPalette.differentiatedBackdrop(for: fill, scheme: scheme))
+        let ink = RGB(SlotPalette.differentiatedInk(for: fill, scheme: scheme))
+
+        #expect(ink.contrast(against: backdrop) >= 4.5)
+    }
+
+    /// In this path the *shape* carries the meaning — solid, empty, hatched —
+    /// so it has to be visible against the surface at 3:1, the bar for a
+    /// graphical object. An undiluted gold hairline measured about 2.3:1, which
+    /// is why the strokes take the darkened ink instead of the raw hue.
+    @Test("The declined-colour shape clears 3:1 against the surface",
+          arguments: SlotPaletteCases.fills, SlotPaletteCases.schemes)
+    func differentiatedShapeSeparatesFromSurface(fill: SlotFill, scheme: ColorScheme) {
+        let surface = RGB(SlotPalette.surface.color(for: scheme))
+        let shape = RGB(SlotPalette.differentiatedShape(for: fill, scheme: scheme))
+
+        #expect(shape.contrast(against: surface) >= 3.0)
+    }
+
+    /// White is what this used to be, and the assertion is kept pointing at it
+    /// so the finding cannot be quietly undone. If a later edit puts white back
+    /// on the solid block, this says why that is wrong before the ratio test
+    /// has to.
+    @Test("White is not legible on the solid block, in either appearance",
+          arguments: SlotPaletteCases.schemes)
+    func whiteWouldFailOnTheSolidBlock(scheme: ColorScheme) {
+        let block = RGB(SlotPalette.differentiatedBackdrop(for: .filled, scheme: scheme))
+        let ink = RGB(SlotPalette.differentiatedInk(for: .filled, scheme: scheme))
+
+        #expect(RGB(.white).contrast(against: block) < 4.5)
+        #expect(ink.contrast(against: block) >= 4.5)
+    }
+
     // MARK: - The mix strengths
 
     /// The reason the pair exists: the fraction that reads as a soft wash on

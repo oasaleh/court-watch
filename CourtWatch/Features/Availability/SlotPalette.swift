@@ -127,8 +127,21 @@ nonisolated enum SlotPalette {
     /// `inkIsLegibleAtIncreasedContrast` is the test that holds this line.
     static let fillStrengthIncreased = SchemeStrength(light: 0.38, dark: 0.65)
 
+    /// How far the hour is pushed toward black when it is drawn on a solid
+    /// block of undiluted hue — the `filled` cell of the declined-colour path.
+    ///
+    /// The same value in both appearances, and that is not an oversight. Every
+    /// other pair here differs because the *backdrop* differs by appearance; in
+    /// this one case the backdrop is the hue itself, which is already a per-
+    /// appearance colour, so the treatment on top of it does not need to move.
+    ///
+    /// It replaces white. White on that block measured 3.47:1 in light mode and
+    /// 1.78:1 in dark — the one path a user who has switched Differentiate
+    /// Without Color on is relying on, and the least legible thing in the app.
+    static let differentiatedInkStrength = SchemeStrength(light: 0.75, dark: 0.75)
+
     /// How far the hue is pushed toward the text colour for the hour written
-    /// inside a labelled cell.
+    /// inside a labelled cell, on the everyday muted wash.
     ///
     /// Toward black on light, toward white on dark. Dark takes far more of it:
     /// a dark-mode block is a saturated colour rather than a pale wash, so a
@@ -187,6 +200,62 @@ nonisolated enum SlotPalette {
         let toward: Color = scheme == .dark ? .white : .black
 
         return tint(for: fill, scheme: scheme).mix(with: toward, by: strength, in: .perceptual)
+    }
+
+    // MARK: - When colour has been declined
+    //
+    // Differentiate Without Color is on, so the cell goes back to drawing an
+    // amount of ink: a solid block, an empty outline, a hatch. Meaning stops
+    // depending on hue — but the shapes are still *drawn* in one, and that hue
+    // now has to survive on its own rather than as a wash. Undiluted, it does
+    // not: the gold measured about 2.3:1 against white, under even the 3:1 bar
+    // a shape has to clear. So the shapes are stroked in the same darkened ink
+    // the hour uses, and only the solid block keeps the hue at full strength —
+    // because that block is a filled area against the surface, not a hairline.
+
+    /// What the shape itself is drawn with.
+    static func differentiatedShape(for fill: SlotFill, scheme: ColorScheme) -> Color {
+        switch fill {
+        case .filled:
+            // A filled area rather than a stroke, so full strength carries.
+            return tint(for: fill, scheme: scheme)
+
+        case .outline, .hatched:
+            // Hairlines. They need the darkened ink to hold up on the surface.
+            return ink(for: fill, scheme: scheme)
+        }
+    }
+
+    /// The hour and the symbol drawn on top of that shape.
+    static func differentiatedInk(for fill: SlotFill, scheme: ColorScheme) -> Color {
+        switch fill {
+        case .filled:
+            // Sits on a solid block of undiluted hue, so it has to darken
+            // against it. This is the case white used to get wrong.
+            return tint(for: fill, scheme: scheme)
+                .mix(
+                    with: .black,
+                    by: differentiatedInkStrength.value(for: scheme), in: .perceptual)
+
+        case .outline, .hatched:
+            // The shape is empty or barely washed, so the hour is really
+            // sitting on the surface and takes the ordinary treatment.
+            return ink(for: fill, scheme: scheme)
+        }
+    }
+
+    /// What `differentiatedInk` is actually drawn on, so the pair can be
+    /// measured rather than assumed.
+    ///
+    /// The hatched cell is approximated by its surface. Its interior is a 12%
+    /// wash of the hue over that surface, which moves the number by less than
+    /// the margin the test demands — and treating it as the bare surface is the
+    /// conservative direction for the outline case beside it.
+    static func differentiatedBackdrop(for fill: SlotFill, scheme: ColorScheme) -> Color {
+        switch fill {
+        case .filled: tint(for: fill, scheme: scheme)
+        case .outline, .hatched: surface.color(for: scheme)
+        }
     }
 }
 
