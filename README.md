@@ -11,14 +11,17 @@ and looking.
 |---|---|
 | ![The day, light](docs/screenshots/day-now-light.png) | ![The evening, dark](docs/screenshots/evening-dark.png) |
 
-Left: the whole day at three of the facilities you follow. Right: the same
-screen at 8 PM, when only three hours are left and everything nearby is booked
-until ten.
+Left: every court at a place you follow, the day running left to right. The hours
+scroll, and the edge fades where there are more of them. Right: the same screen
+at 8 PM, when three hours are left — they fit, so nothing fades and nothing needs
+swiping.
 
 ## What it does
 
-- **One glance, no tapping.** Every court at every facility you follow, with its
-  whole remaining day, on one screen. Nothing to drill into.
+- **One glance, no tapping.** Every court at every facility you follow, stacked
+  and aligned, with each place's hours scrolling as one. Nothing to drill into —
+  and the header answers before you touch anything: *2 of 5 free*, or *Next free
+  at 10 PM*.
 - **Your places, by name.** Pick *Shadowbend*, not *Shadowbend Tennis 3*. All five
   of its courts come with it. 27 facilities, 80 courts.
 - **Only what's still to come.** Hours that have ended are hidden — but a slot
@@ -133,6 +136,9 @@ silent rather than loud:
 - 12-hour times regardless of the device's 24-hour setting
 - With *Differentiate Without Color*, fills give way to solid, outlined and
   hatched treatments plus symbols
+- With *Increase Contrast*, every block's hour switches to a stronger colour that
+  clears 7:1 against it. Standard pairs clear 4.5:1, and both floors are
+  measured in tests rather than judged by eye
 - VoiceOver announces each cell as court, time and availability — checked
   against a running screen, not just against the strings
 - Dynamic Type through the accessibility sizes; at the largest, the grid becomes
