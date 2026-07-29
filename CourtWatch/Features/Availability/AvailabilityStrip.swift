@@ -17,6 +17,12 @@
 //  failure a single mapping exists to prevent — so the appearance, and only the
 //  appearance, decides.
 //
+//  It holds no opinion about what anything is *coloured*, either. Every hue,
+//  every mix strength and the surface they are mixed into live in
+//  `SlotPalette.swift`, declared once for light mode and once for dark. To
+//  change a shade, edit a hex there — not here. This file asks the palette for
+//  a colour and fills a shape with it.
+//
 
 import SwiftUI
 
@@ -228,32 +234,16 @@ private struct SlotCell: View {
             // The fill is therefore the only colour signal, which sets a floor
             // on how muted it can be: too far toward the background and a dark
             // green and a dark red stop being tellable apart at a glance, which
-            // is the one thing this grid exists to do. The mix below is set
-            // where the two stay obviously different rather than where the wash
-            // looks most restrained.
-            //
-            // Mixed opaquely into the surface rather than `.opacity()`. A
-            // translucent hue takes its result from whatever is behind it and
-            // loses chroma over a dark background, which comes out muddy; a
-            // perceptual mix against the real surface does not.
+            // is the one thing this grid exists to do. The hues and the mix are
+            // chosen per scheme in `SlotPalette`, which is where that floor is
+            // actually set — and where it is changed.
             rectangle.fill(mutedFill)
         }
     }
 
-    /// The hue mixed into the surface rather than laid over it.
-    ///
-    /// Dark mode takes a stronger mix: the same fraction that reads as a soft
-    /// wash on white comes out near-black on a dark surface.
+    /// The block, as the palette resolves it for this scheme and contrast.
     private var mutedFill: Color {
-        let strength: Double =
-            switch (colorScheme, contrast) {
-            case (.dark, .increased): 0.78
-            case (.dark, _): 0.64
-            case (_, .increased): 0.38
-            default: 0.28
-            }
-
-        return Color(uiColor: .systemBackground).mix(with: tint, by: strength, in: .perceptual)
+        SlotPalette.fill(for: appearance.fill, scheme: colorScheme, contrast: contrast)
     }
 
     /// The hour, and nothing else.
@@ -292,17 +282,14 @@ private struct SlotCell: View {
         }
     }
 
-    /// Green is free, red is taken, orange is unknown.
+    /// Green is free, red is taken, amber is unknown — in whichever pair of
+    /// values `SlotPalette` holds for the scheme this cell is drawn in.
     ///
     /// Hue is the primary channel here by explicit choice, which is why the
     /// density treatment above is kept and reinstated the moment the system
     /// reports that colour should not be relied on.
     private var tint: Color {
-        switch appearance.fill {
-        case .filled: .green
-        case .outline: .red
-        case .hatched: .orange
-        }
+        SlotPalette.tint(for: appearance.fill, scheme: colorScheme)
     }
 
     /// Drawn on top of a block, so it has to contrast with it.
@@ -317,15 +304,11 @@ private struct SlotCell: View {
 
         return layout == .labeled ? strongInk : .white
     }
+
     /// The hue, pushed far enough toward the text colour to stay legible on its
-    /// own muted wash.
-    ///
-    /// Green and orange are the ones that need it: at full saturation both sit
-    /// close in luminance to a light background, and caption text needs 4.5:1.
+    /// own muted wash. Resolved per scheme by the palette.
     private var strongInk: Color {
-        colorScheme == .dark
-            ? tint.mix(with: .white, by: 0.30, in: .perceptual)
-            : tint.mix(with: .black, by: 0.45, in: .perceptual)
+        SlotPalette.ink(for: appearance.fill, scheme: colorScheme)
     }
 }
 
